@@ -597,12 +597,12 @@
         // ==================== 操作 ====================
         // ==================== 通用 helper ====================
         async function loadCandidates(type, q, limit = 10) {
-            """按名称搜索, 返回候选列表"""
+            // 按名称搜索, 返回候选列表
             return await api('/candidates', {q, type, limit});
         }
 
         function renderCandidates(items, onSelect) {
-            """渲染候选列表 (重名筛选用)"""
+            // 渲染候选列表 (重名筛选用)
             if (!items || items.length === 0) return '<p style="color: #999;">无结果</p>';
             return items.map((c, i) => {
                 const dur = c.duration ? ` · ${Math.floor(c.duration/60000)}:${String(Math.floor((c.duration%60000)/1000)).padStart(2, '0')}` : '';
