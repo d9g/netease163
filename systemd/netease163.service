@@ -1,6 +1,6 @@
 [Unit]
 Description=netease163 - 网易云音乐爬虫 FastAPI 服务
-Documentation=http://163.d9g.com.cn (待老杨配置 nginx)
+Documentation=https://github.com/d9g/netease163
 After=network.target
 Wants=network-online.target
 
@@ -21,7 +21,7 @@ Environment="DATABASE_URL=sqlite:////root/netease163/data/netease163.db"
 WorkingDirectory=/root/netease163
 
 # 启动命令 (借鉴 NetCloud Helper.get_logger 风格: 写到 logs/)
-ExecStart=/root/.netease163-venv/bin/python -m netease163.api.app
+ExecStart=/root/.netease163-venv/bin/uvicorn netease163.api.app:app --host 127.0.0.1 --port 9700
 
 # 重启策略
 Restart=always

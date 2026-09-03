@@ -59,3 +59,54 @@ def test_docs(client):
     """Swagger UI"""
     resp = client.get("/docs")
     assert resp.status_code == 200
+
+
+# ==================== 登录态 API 测试 ====================
+
+def test_login_status_unauthenticated(client):
+    """未登录状态"""
+    resp = client.get("/api/v1/login/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["logged_in"] is False
+    assert data["user_id"] is None
+
+
+def test_my_favorite_requires_login(client):
+    """my/favorite 未登录应 401"""
+    resp = client.get("/api/v1/my/favorite")
+    assert resp.status_code == 401
+
+
+def test_my_recommend_requires_login(client):
+    """my/recommend 未登录应 401"""
+    resp = client.get("/api/v1/my/recommend")
+    assert resp.status_code == 401
+
+
+def test_my_fm_requires_login(client):
+    """my/fm 未登录应 401"""
+    resp = client.get("/api/v1/my/fm")
+    assert resp.status_code == 401
+
+
+def test_my_playlists_requires_login(client):
+    """my/playlists 未登录应 401"""
+    resp = client.get("/api/v1/my/playlists")
+    assert resp.status_code == 401
+
+
+def test_login_phone_wrong_creds(client):
+    """错误账号密码应返回 success=false"""
+    resp = client.post("/api/v1/login/phone?account=13800000000&password=wrong_password_xxxxxx")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["success"] is False
+
+
+def test_logout(client):
+    """登出端点"""
+    resp = client.post("/api/v1/login/logout")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["success"] is True

@@ -230,9 +230,100 @@ def list_toplists():
     return {"toplists": ToplistSpider.get_toplist_ids}
 
 
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.getenv("API_PORT", "9700"))
-    host = os.getenv("API_HOST", "0.0.0.0")
-    logger.info(f"🚀 启动 FastAPI 服务 {host}:{port}")
-    uvicorn.run(app, host=host, port=port, log_level="info")
+
+# ==================== 登录态 API ====================
+@app.get("/api/v1/login/status", tags=["登录"])
+def api_login_status():
+    """查看当前登录状态"""
+    from netease163.login import LoginManager
+    mgr = LoginManager()
+    return {
+        "logged_in": mgr.is_logged_in,
+        "user_id": mgr.user_id,
+        "nickname": mgr.nickname,
+    }
+
+
+@app.post("/api/v1/login/phone", tags=["登录"])
+def api_login_phone(
+    account: str = Query(..., description="手机号"),
+    password: str = Query(..., description="密码"),
+):
+    """手机密码登录"""
+    from netease163.login import LoginManager
+    mgr = LoginManager()
+    success = mgr.login_with_phone(account, password)
+    if success:
+        return {"success": True, "user_id": mgr.user_id, "nickname": mgr.nickname}
+    return {"success": False, "error": "登录失败, 请检查账号密码或风控"}
+
+
+@app.post("/api/v1/login/email", tags=["登录"])
+def api_login_email(
+    account: str = Query(..., description="邮箱"),
+    password: str = Query(..., description="密码"),
+):
+    """邮箱密码登录"""
+    from netease163.login import LoginManager
+    mgr = LoginManager()
+    success = mgr.login_with_email(account, password)
+    if success:
+        return {"success": True, "user_id": mgr.user_id, "nickname": mgr.nickname}
+    return {"success": False, "error": "登录失败, 请检查账号密码或风控"}
+
+
+@app.post("/api/v1/login/logout", tags=["登录"])
+def api_logout():
+    """登出"""
+    from netease163.login import LoginManager
+    LoginManager().logout()
+    return {"success": True}
+
+
+# ==================== 我的音乐 (需登录) ====================
+@app.get("/api/v1/my/favorite", tags=["我的音乐"])
+def api_my_favorite(limit: int = Query(50, ge=1, le=200)):
+    """我的红心歌单"""
+    from netease163.login import get_my_favorite
+    try:
+        return get_my_favorite(limit=limit)
+    except PermissionError as e:
+        raise HTTPException(401, str(e))
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/v1/my/recommend", tags=["我的音乐"])
+def api_my_recommend():
+    """每日推荐歌单"""
+    from netease163.login import get_my_recommend
+    try:
+        return get_my_recommend()
+    except PermissionError as e:
+        raise HTTPException(401, str(e))
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/v1/my/fm", tags=["我的音乐"])
+def api_my_fm():
+    """私人 FM"""
+    from netease163.login import get_my_fm
+    try:
+        return get_my_fm()
+    except PermissionError as e:
+        raise HTTPException(401, str(e))
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/v1/my/playlists", tags=["我的音乐"])
+def api_my_playlists(limit: int = Query(30, ge=1, le=100)):
+    """我的所有歌单"""
+    from netease163.login import get_my_playlists
+    try:
+        return get_my_playlists(limit=limit)
+    except PermissionError as e:
+        raise HTTPException(401, str(e))
+    except Exception as e:
+        raise HTTPException(500, str(e))

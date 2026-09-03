@@ -6,10 +6,13 @@ __pycache__/
 .coverage
 htmlcov/
 
-# 数据
+# 数据 + 日志
 data/*.db
 data/*.db-journal
 logs/*.log
+logs/.login_session.json
+data/.gitkeep
+logs/.gitkeep
 
 # venv
 .venv/

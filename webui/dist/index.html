@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>netease163 — 网易云音乐爬虫</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        .header h1 {
+            color: #c20c0c;
+            font-size: 28px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .header .subtitle {
+            color: #666;
+            font-size: 14px;
+            margin-top: 8px;
+        }
+        .header .nav {
+            margin-top: 16px;
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .header .nav a {
+            color: #667eea;
+            text-decoration: none;
+            font-size: 14px;
+            padding: 4px 10px;
+            background: #f0f3ff;
+            border-radius: 6px;
+        }
+        .header .nav a:hover { background: #e0e7ff; }
+        .grid {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 20px;
+        }
+        @media (max-width: 768px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+        .sidebar {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            height: fit-content;
+        }
+        .sidebar h3 {
+            color: #333;
+            font-size: 14px;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .menu-item {
+            display: block;
+            width: 100%;
+            padding: 10px 14px;
+            margin-bottom: 4px;
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            text-align: left;
+            cursor: pointer;
+            font-size: 14px;
+            color: #555;
+            transition: all 0.2s;
+        }
+        .menu-item:hover { background: #f5f7fa; color: #333; }
+        .menu-item.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .content {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            min-height: 600px;
+        }
+        .content h2 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 6px;
+            font-weight: 500;
+        }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px 14px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .form-row {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+        .form-row .form-group { flex: 1; }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(102,126,234,0.4); }
+        .btn-secondary {
+            background: #f5f7fa;
+            color: #555;
+        }
+        .btn-secondary:hover { background: #e8edf3; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .result {
+            margin-top: 20px;
+            background: #fafafa;
+            border-radius: 8px;
+            padding: 16px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .result pre {
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .song-card {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .song-card:hover { background: #f0f3ff; transform: translateX(4px); }
+        .song-card .num {
+            color: #999;
+            font-size: 14px;
+            width: 30px;
+            text-align: center;
+        }
+        .song-card .info { flex: 1; }
+        .song-card .name {
+            font-size: 14px;
+            color: #333;
+            font-weight: 500;
+        }
+        .song-card .meta {
+            font-size: 12px;
+            color: #999;
+            margin-top: 2px;
+        }
+        .lyric-box {
+            background: #1a1a1a;
+            color: #f0f0f0;
+            padding: 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            line-height: 1.8;
+            max-height: 500px;
+            overflow-y: auto;
+            font-family: 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+        }
+        .comment-item {
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .comment-item:last-child { border-bottom: none; }
+        .comment-item .author {
+            font-size: 13px;
+            color: #667eea;
+            font-weight: 500;
+        }
+        .comment-item .content {
+            font-size: 14px;
+            color: #333;
+            margin-top: 4px;
+            line-height: 1.5;
+        }
+        .comment-item .likes {
+            font-size: 12px;
+            color: #999;
+            margin-top: 4px;
+        }
+        .login-status {
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 13px;
+        }
+        .login-status.logged-in {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .login-status.logged-out {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #667eea;
+            color: white;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-left: 8px;
+        }
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background: #333;
+            color: white;
+            border-radius: 6px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            z-index: 9999;
+        }
+        .toast.show { opacity: 1; }
+        .toast.error { background: #dc3545; }
+        .toast.success { background: #28a745; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎵 netease163 <span class="badge">v0.2.0</span></h1>
+            <div class="subtitle">网易云音乐爬虫服务 · 借鉴 163yinyue + NetCloud · pyncm 底层</div>
+            <div class="nav">
+                <a href="/docs" target="_blank">📚 API 文档 (Swagger)</a>
+                <a href="/redoc" target="_blank">📖 API 文档 (ReDoc)</a>
+                <a href="/health" target="_blank">❤️ 健康检查</a>
+            </div>
+        </div>
+
+        <div id="loginStatus" class="login-status logged-out">
+            🔒 未登录 · 登录后可访问私人歌单/推荐/FM
+        </div>
+
+        <div class="grid">
+            <div class="sidebar">
+                <h3>功能</h3>
+                <button class="menu-item active" data-page="search">🔍 搜索</button>
+                <button class="menu-item" data-page="lyric">📝 歌词</button>
+                <button class="menu-item" data-page="comment">💬 评论</button>
+                <button class="menu-item" data-page="song">🎵 歌曲详情</button>
+                <button class="menu-item" data-page="playlist">📋 歌单</button>
+                <button class="menu-item" data-page="artist">👤 歌手</button>
+                <button class="menu-item" data-page="album">💿 专辑</button>
+                <button class="menu-item" data-page="radio">📻 电台</button>
+                <button class="menu-item" data-page="toplist">🏆 排行榜</button>
+                <button class="menu-item" data-page="login" style="margin-top: 12px; color: #c20c0c;">🔐 登录</button>
+                <button class="menu-item" data-page="my-music" style="color: #c20c0c;">❤️ 我的音乐</button>
+            </div>
+
+            <div class="content" id="content">
+                <!-- 内容动态加载 -->
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // ==================== 状态 ====================
+        const API_BASE = '/api/v1';
+        let currentPage = 'search';
+
+        // ==================== 工具 ====================
+        async function api(path, params = {}) {
+            const url = new URL(API_BASE + path, window.location.origin);
+            Object.keys(params).forEach(k => {
+                if (params[k] !== undefined && params[k] !== '') {
+                    url.searchParams.append(k, params[k]);
+                }
+            });
+            const resp = await fetch(url);
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({error: resp.statusText}));
+                throw new Error(err.error || err.detail || `HTTP ${resp.status}`);
+            }
+            return resp.json();
+        }
+
+        function toast(msg, type = '') {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast show ' + type;
+            setTimeout(() => t.className = 'toast', 3000);
+        }
+
+        function escapeHtml(s) {
+            if (!s) return '';
+            return s.toString().replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
+        async function checkLogin() {
+            try {
+                const data = await api('/login/status');
+                const el = document.getElementById('loginStatus');
+                if (data.logged_in) {
+                    el.className = 'login-status logged-in';
+                    el.innerHTML = `✅ 已登录 · <strong>${escapeHtml(data.nickname || data.user_id)}</strong> · <a href="javascript:void(0)" onclick="logout()">登出</a>`;
+                } else {
+                    el.className = 'login-status logged-out';
+                    el.innerHTML = `🔒 未登录 · <a href="javascript:void(0)" onclick="showPage('login')">立即登录</a>`;
+                }
+            } catch (e) {
+                console.error('login status check failed', e);
+            }
+        }
+
+        async function logout() {
+            try {
+                await api('/login/logout', {action: 'do'});
+                toast('已登出', 'success');
+                checkLogin();
+            } catch (e) {
+                toast('登出失败: ' + e.message, 'error');
+            }
+        }
+
+        // ==================== 页面 ====================
+        const pages = {
+            search: {
+                title: '🔍 搜索',
+                render: () => `
+                    <h2>🔍 搜索</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>关键词</label>
+                            <input id="kw" placeholder="林俊杰 / 江南 / 周杰伦" value="林俊杰">
+                        </div>
+                        <div class="form-group">
+                            <label>类型</label>
+                            <select id="type">
+                                <option value="song">歌曲</option>
+                                <option value="artist">歌手</option>
+                                <option value="album">专辑</option>
+                                <option value="playlist">歌单</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>条数</label>
+                            <input id="limit" type="number" value="10" min="1" max="100">
+                        </div>
+                        <button class="btn btn-primary" onclick="doSearch()">搜索</button>
+                    </div>
+                    <div id="result"></div>
+                `
+            },
+            lyric: {
+                title: '📝 歌词',
+                render: () => `
+                    <h2>📝 歌词</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>歌曲 ID</label>
+                            <input id="songId" placeholder="1062642" value="1062642">
+                        </div>
+                        <button class="btn btn-primary" onclick="doLyric()">查询</button>
+                    </div>
+                    <div id="result"></div>
+                `
+            },
+            comment: {
+                title: '💬 评论',
+                render: () => `
+                    <h2>💬 评论</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>歌曲 ID</label>
+                            <input id="songId" placeholder="1062642" value="1062642">
+                        </div>
+                        <div class="form-group">
+                            <label>条数</label>
+                            <input id="limit" type="number" value="20" min="1" max="100">
+                        </div>
+                        <div class="form-group">
+                            <label>分页偏移</label>
+                            <input id="offset" type="number" value="0" min="0">
+                        </div>
+                        <button class="btn btn-primary" onclick="doComment()">查询</button>
+                    </div>
+                    <div id="result"></div>
+                `
+            },
+            song: {
+                title: '🎵 歌曲详情',
+                render: () => `
+                    <h2>🎵 歌曲详情</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>歌曲 ID</label>
+                            <input id="songId" placeholder="1062642" value="1062642">
+                        </div>
+                        <button class="btn btn-primary" onclick="doSong()">查询</button>
+                    </div>
+                    <div id="result"></div>
+                `
+            },
+            playlist: {
+                title: '📋 歌单',
+                render: () => `
+                    <h2>📋 歌单详情</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>歌单 ID (例: 19723756=飙升榜)</label>
+                            <input id="playlistId" value="19723756">
+                        </div>
+                        <button class="btn btn-primary" onclick="doPlaylist()">查询</button>
+                    </div>
+                    <div id="result"></div>
+                `
+            },
+            artist: {
+                title: '👤 歌手',
+                render: () => `
+                    <h2>👤 歌手详情</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>歌手 ID</label>
+                            <input id="artistId" placeholder="5781" value="5781">
+                        </div>
+                        <button class="btn btn-primary" onclick="doArtist()">查询</button>
+                    </div>
+                    <div id="result"></div>
+                `
+            },
+            album: {
+                title: '💿 专辑',
+                render: () => `
+                    <h2>💿 专辑详情</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>专辑 ID</label>
+                            <input id="albumId" value="110808">
+                        </div>
+                        <button class="btn btn-primary" onclick="doAlbum()">查询</button>
+                    </div>
+                    <div id="result"></div>
+                `
+            },
+            radio: {
+                title: '📻 电台',
+                render: () => `
+                    <h2>📻 电台节目</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>电台 ID</label>
+                            <input id="radioId" value="350">
+                        </div>
+                        <div class="form-group">
+                            <label>条数</label>
+                            <input id="limit" type="number" value="20" min="1" max="100">
+                        </div>
+                        <button class="btn btn-primary" onclick="doRadio()">查询</button>
+                    </div>
+                    <div id="result"></div>
+                `
+            },
+            toplist: {
+                title: '🏆 排行榜',
+                render: () => `
+                    <h2>🏆 排行榜</h2>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>榜单</label>
+                            <select id="name">
+                                <option value="hot">热歌榜</option>
+                                <option value="soar">飙升榜</option>
+                                <option value="new">新歌榜</option>
+                                <option value="original">原创榜</option>
+                                <option value="electronic">电音榜</option>
+                                <option value="ACG">ACG 榜</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>条数</label>
+                            <input id="limit" type="number" value="30" min="1" max="200">
+                        </div>
+                        <button class="btn btn-primary" onclick="doToplist()">查询</button>
+                    </div>
+                    <div id="result"></div>
+                `
+            },
+            login: {
+                title: '🔐 登录',
+                render: () => `
+                    <h2>🔐 网易云登录</h2>
+                    <p style="color: #666; font-size: 13px; margin-bottom: 20px;">
+                        登录后可访问: 我的歌单 · 私人 FM · 每日推荐 · 关注数据<br>
+                        登录态保存在服务端, 30 天免重复登录
+                    </p>
+                    <div class="form-group">
+                        <label>登录方式</label>
+                        <select id="loginType" onchange="toggleLoginType()">
+                            <option value="phone">📱 手机密码</option>
+                            <option value="email">📧 邮箱密码</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label id="accountLabel">手机号</label>
+                        <input id="account" placeholder="13800138000">
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <input id="password" type="password" placeholder="密码">
+                    </div>
+                    <button class="btn btn-primary" onclick="doLogin()">登录</button>
+                    <div id="result"></div>
+                `
+            },
+            'my-music': {
+                title: '❤️ 我的音乐',
+                render: () => `
+                    <h2>❤️ 我的音乐</h2>
+                    <p style="color: #856404; background: #fff3cd; padding: 12px; border-radius: 6px; font-size: 13px; margin-bottom: 20px;">
+                        ⚠️ 此功能需要登录态, 未登录会返回 401 错误
+                    </p>
+                    <div class="form-row">
+                        <button class="btn btn-primary" onclick="myFav()">❤️ 我的红心歌单</button>
+                        <button class="btn btn-primary" onclick="myRecommend()">🎁 每日推荐</button>
+                        <button class="btn btn-primary" onclick="myFM()">🎵 私人 FM</button>
+                    </div>
+                    <div id="result"></div>
+                `
+            }
+        };
+
+        // ==================== 操作 ====================
+        async function doSearch() {
+            const kw = document.getElementById('kw').value;
+            const type = document.getElementById('type').value;
+            const limit = document.getElementById('limit').value;
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 搜索中...</p>';
+            try {
+                const data = await api('/search', {q: kw, type, limit});
+                if (data.items.length === 0) {
+                    r.innerHTML = '<p style="color: #999;">无结果</p>';
+                    return;
+                }
+                if (type === 'song') {
+                    r.innerHTML = data.items.map((s, i) => `
+                        <div class="song-card" onclick="fillSongId(${s.id})">
+                            <div class="num">${i+1}</div>
+                            <div class="info">
+                                <div class="name">${escapeHtml(s.name)}</div>
+                                <div class="meta">${s.artists.map(escapeHtml).join(' / ')} · ${escapeHtml(s.album)}</div>
+                            </div>
+                        </div>
+                    `).join('');
+                } else if (type === 'artist') {
+                    r.innerHTML = data.items.map(a => `
+                        <div class="song-card" onclick="document.getElementById('artistId').value=${a.id};showPage('artist')">
+                            <div class="info"><div class="name">${escapeHtml(a.name)}</div><div class="meta">${escapeHtml((a.alias || []).join(' / '))}</div></div>
+                        </div>
+                    `).join('');
+                } else {
+                    r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data.items, null, 2))}</pre>`;
+                }
+            } catch (e) { toast('搜索失败: ' + e.message, 'error'); r.innerHTML = ''; }
+        }
+
+        function fillSongId(id) {
+            document.getElementById('songId').value = id;
+            showPage('lyric');
+        }
+
+        async function doLyric() {
+            const songId = document.getElementById('songId').value;
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
+            try {
+                const data = await api('/lyric/' + songId);
+                r.innerHTML = `
+                    <p style="margin-bottom: 8px; color: #666;">歌曲 ID: ${songId} · <a href="/api/v1/lyric/${songId}" target="_blank">JSON</a></p>
+                    <div class="lyric-box">${escapeHtml(data.lyric || data.tlyric || '(无歌词)')}</div>
+                `;
+            } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
+        }
+
+        async function doComment() {
+            const songId = document.getElementById('songId').value;
+            const limit = document.getElementById('limit').value;
+            const offset = document.getElementById('offset').value;
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
+            try {
+                const data = await api('/comment/' + songId, {limit, offset});
+                let html = `<p style="margin-bottom: 12px; color: #666;">📊 总数: <strong>${data.total}</strong> · 热门 ${data.hot_comments.length} · 普通 ${data.comments.length}</p>`;
+                if (data.hot_comments.length > 0) {
+                    html += '<h3 style="margin: 16px 0 8px; color: #c20c0c;">🔥 热门评论</h3>';
+                    html += data.hot_comments.map(c => `
+                        <div class="comment-item">
+                            <div class="author">${escapeHtml(c.user)}</div>
+                            <div class="content">${escapeHtml(c.content)}</div>
+                            <div class="likes">👍 ${c.liked_count}</div>
+                        </div>
+                    `).join('');
+                }
+                if (data.comments.length > 0) {
+                    html += '<h3 style="margin: 16px 0 8px; color: #666;">💬 最新评论</h3>';
+                    html += data.comments.slice(0, 50).map(c => `
+                        <div class="comment-item">
+                            <div class="author">${escapeHtml(c.user)}</div>
+                            <div class="content">${escapeHtml(c.content)}</div>
+                            <div class="likes">👍 ${c.liked_count}</div>
+                        </div>
+                    `).join('');
+                }
+                r.innerHTML = html;
+            } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
+        }
+
+        async function doSong() {
+            const songId = document.getElementById('songId').value;
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
+            try {
+                const data = await api('/song/' + songId);
+                r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+            } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
+        }
+
+        async function doPlaylist() {
+            const id = document.getElementById('playlistId').value;
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
+            try {
+                const data = await api('/playlist/' + id);
+                let html = `<h3>${escapeHtml(data.name)}</h3>`;
+                html += `<p style="color: #666; font-size: 13px; margin: 8px 0;">${escapeHtml(data.creator)} · ${data.track_count} 首 · 播放 ${data.play_count.toLocaleString()}</p>`;
+                if (data.description) html += `<p style="font-size: 13px; color: #555; margin: 8px 0;">${escapeHtml(data.description)}</p>`;
+                html += data.tracks.map((t, i) => `
+                    <div class="song-card" onclick="fillSongId(${t.id})">
+                        <div class="num">${i+1}</div>
+                        <div class="info">
+                            <div class="name">${escapeHtml(t.name)}</div>
+                            <div class="meta">${t.artists.map(escapeHtml).join(' / ')}</div>
+                        </div>
+                    </div>
+                `).join('');
+                r.innerHTML = html;
+            } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
+        }
+
+        async function doArtist() {
+            const id = document.getElementById('artistId').value;
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
+            try {
+                const data = await api('/artist/' + id);
+                r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+            } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
+        }
+
+        async function doAlbum() {
+            const id = document.getElementById('albumId').value;
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
+            try {
+                const data = await api('/album/' + id);
+                let html = `<h3>${escapeHtml(data.name)}</h3>`;
+                html += `<p style="color: #666; font-size: 13px; margin: 8px 0;">${data.artists.map(a => escapeHtml(a.name)).join(' / ')} · ${data.track_count} 首</p>`;
+                html += data.tracks.map((t, i) => `
+                    <div class="song-card" onclick="fillSongId(${t.id})">
+                        <div class="num">${i+1}</div>
+                        <div class="info">
+                            <div class="name">${escapeHtml(t.name)}</div>
+                            <div class="meta">${t.artists.map(escapeHtml).join(' / ')}</div>
+                        </div>
+                    </div>
+                `).join('');
+                r.innerHTML = html;
+            } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
+        }
+
+        async function doRadio() {
+            const id = document.getElementById('radioId').value;
+            const limit = document.getElementById('limit').value;
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
+            try {
+                const data = await api('/radio/' + id, {limit});
+                r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+            } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
+        }
+
+        async function doToplist() {
+            const name = document.getElementById('name').value;
+            const limit = document.getElementById('limit').value;
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
+            try {
+                const data = await api('/toplist/' + name, {limit});
+                let html = `<h3>${escapeHtml(data.name)}</h3>`;
+                html += `<p style="color: #666; font-size: 13px; margin: 8px 0;">更新时间: ${new Date(data.update_time).toLocaleString()}</p>`;
+                html += data.tracks.map((t, i) => `
+                    <div class="song-card" onclick="fillSongId(${t.id})">
+                        <div class="num">${i+1}</div>
+                        <div class="info">
+                            <div class="name">${escapeHtml(t.name)}</div>
+                            <div class="meta">${t.artists.map(escapeHtml).join(' / ')}</div>
+                        </div>
+                    </div>
+                `).join('');
+                r.innerHTML = html;
+            } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
+        }
+
+        function toggleLoginType() {
+            const type = document.getElementById('loginType').value;
+            document.getElementById('accountLabel').textContent = type === 'phone' ? '手机号' : '邮箱';
+            document.getElementById('account').placeholder = type === 'phone' ? '13800138000' : 'user@example.com';
+        }
+
+        async function doLogin() {
+            const type = document.getElementById('loginType').value;
+            const account = document.getElementById('account').value;
+            const password = document.getElementById('password').value;
+            const r = document.getElementById('result');
+            if (!account || !password) { toast('请输入账号密码', 'error'); return; }
+            r.innerHTML = '<p style="color: #999;">⏳ 登录中...</p>';
+            try {
+                const data = await api('/login/' + type, {account, password});
+                if (data.success) {
+                    toast('登录成功: ' + data.nickname, 'success');
+                    checkLogin();
+                    r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+                } else {
+                    toast('登录失败: ' + data.error, 'error');
+                    r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+                }
+            } catch (e) { toast('登录失败: ' + e.message, 'error'); r.innerHTML = ''; }
+        }
+
+        async function myFav() {
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
+            try {
+                const data = await api('/my/favorite', {limit: 50});
+                let html = `<h3>❤️ 我的红心歌单</h3><p style="color: #666; font-size: 13px; margin: 8px 0;">总数: ${data.total}</p>`;
+                html += (data.songs || []).map((t, i) => `
+                    <div class="song-card" onclick="fillSongId(${t.id})">
+                        <div class="num">${i+1}</div>
+                        <div class="info">
+                            <div class="name">${escapeHtml(t.name)}</div>
+                            <div class="meta">${(t.artists || []).map(a => escapeHtml(a.name || a)).join(' / ')}</div>
+                        </div>
+                    </div>
+                `).join('');
+                r.innerHTML = html;
+            } catch (e) { toast('查询失败: ' + e.message + ' (需要登录)', 'error'); r.innerHTML = ''; }
+        }
+
+        async function myRecommend() {
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
+            try {
+                const data = await api('/my/recommend');
+                let html = `<h3>🎁 每日推荐</h3>`;
+                html += (data.songs || []).map((t, i) => `
+                    <div class="song-card" onclick="fillSongId(${t.id})">
+                        <div class="num">${i+1}</div>
+                        <div class="info">
+                            <div class="name">${escapeHtml(t.name)}</div>
+                            <div class="meta">${(t.artists || []).map(a => escapeHtml(a.name || a)).join(' / ')}</div>
+                        </div>
+                    </div>
+                `).join('');
+                r.innerHTML = html;
+            } catch (e) { toast('查询失败: ' + e.message + ' (需要登录)', 'error'); r.innerHTML = ''; }
+        }
+
+        async function myFM() {
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
+            try {
+                const data = await api('/my/fm');
+                r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+            } catch (e) { toast('查询失败: ' + e.message + ' (需要登录)', 'error'); r.innerHTML = ''; }
+        }
+
+        // ==================== 导航 ====================
+        function showPage(name) {
+            currentPage = name;
+            document.querySelectorAll('.menu-item').forEach(el => el.classList.toggle('active', el.dataset.page === name));
+            document.getElementById('content').innerHTML = pages[name].render();
+        }
+
+        document.querySelectorAll('.menu-item').forEach(el => {
+            el.addEventListener('click', () => showPage(el.dataset.page));
+        });
+
+        // 初始
+        showPage('search');
+        checkLogin();
+    </script>
+</body>
+</html>

@@ -138,3 +138,153 @@ def login_required(func):
         return func(*args, **kwargs)
 
     return wrapper
+
+
+# ==================== 登录态专属 API ====================
+# 借鉴 NetCloud: get_self_playlist / get_self_playlists 等登录后方法
+# 这里用 pyncm 的 GetUserAccount / GetUserPlaylists 实现
+
+def get_my_favorite(limit: int = 50) -> Dict[str, Any]:
+    """
+    获取我的红心歌单 (登录态)
+
+    Returns:
+        {
+            "user_id": int,
+            "nickname": str,
+            "total": int,
+            "songs": [
+                {"id": int, "name": str, "artists": [...], "album": "..."}
+            ]
+        }
+    """
+    from pyncm.apis.user import GetUserPlaylists
+    from pyncm.apis.playlist import GetPlaylistInfo
+    from pyncm import GetCurrentSession
+
+    mgr = LoginManager()
+    if not mgr.is_logged_in:
+        raise PermissionError("未登录, 请先调用 login_with_*()")
+
+    # 1. 拿用户所有歌单
+    pl_result = GetUserPlaylists(mgr.user_id, limit=30)
+    if pl_result.get("code") != 200:
+        raise RuntimeError(f"获取歌单失败: {pl_result.get('msg')}")
+
+    playlists = pl_result.get("playlist", [])
+    # 2. 找"我喜欢的音乐" (specialType=5 是默认红心歌单)
+    fav = None
+    for p in playlists:
+        if p.get("specialType") == 5 or "喜欢" in p.get("name", ""):
+            fav = p
+            break
+
+    if not fav:
+        return {"user_id": mgr.user_id, "nickname": mgr.nickname, "total": 0, "songs": []}
+
+    # 3. 拿红心歌单详情
+    detail = GetPlaylistInfo(fav["id"])
+    if detail.get("code") != 200:
+        raise RuntimeError(f"红心歌单详情失败")
+
+    p = detail.get("playlist", {})
+    track_ids = [t["id"] for t in p.get("trackIds", [])[:limit]]
+    songs = []
+    if track_ids:
+        from pyncm.apis.track import GetTrackDetail
+        td = GetTrackDetail(track_ids)
+        if td.get("code") == 200:
+            songs = [
+                {
+                    "id": s["id"],
+                    "name": s["name"],
+                    "artists": [a["name"] for a in s.get("ar", [])],
+                    "album": s.get("al", {}).get("name", ""),
+                }
+                for s in td.get("songs", [])
+            ]
+
+    return {
+        "user_id": mgr.user_id,
+        "nickname": mgr.nickname,
+        "playlist_name": p.get("name", ""),
+        "total": p.get("trackCount", 0),
+        "songs": songs,
+    }
+
+
+def get_my_recommend() -> Dict[str, Any]:
+    """
+    获取每日推荐 (登录态)
+    """
+    mgr = LoginManager()
+    if not mgr.is_logged_in:
+        raise PermissionError("未登录, 请先调用 login_with_*()")
+
+    from pyncm.apis.cloud import GetDailyRecommendations
+    result = GetDailyRecommendations()
+    if result.get("code") != 200:
+        raise RuntimeError(f"每日推荐失败: {result.get('msg')}")
+
+    songs = [
+        {
+            "id": s["id"],
+            "name": s["name"],
+            "artists": [a["name"] for a in s.get("ar", [])],
+            "album": s.get("al", {}).get("name", ""),
+        }
+        for s in result.get("dailySongs", [])
+    ]
+    return {"date": result.get("date", ""), "songs": songs}
+
+
+def get_my_fm() -> Dict[str, Any]:
+    """
+    获取私人 FM (登录态, 一次返回 3 首)
+    """
+    mgr = LoginManager()
+    if not mgr.is_logged_in:
+        raise PermissionError("未登录, 请先调用 login_with_*()")
+
+    from pyncm.apis.cloud import GetPersonalFm
+    result = GetPersonalFm()
+    if result.get("code") != 200:
+        raise RuntimeError(f"私人 FM 失败: {result.get('msg')}")
+
+    songs = [
+        {
+            "id": s["id"],
+            "name": s["name"],
+            "artists": [a["name"] for a in s.get("artists", [])],
+            "album": s.get("album", ""),
+        }
+        for s in result.get("data", [])
+    ]
+    return {"count": len(songs), "songs": songs}
+
+
+def get_my_playlists(limit: int = 30) -> Dict[str, Any]:
+    """
+    获取我的所有歌单 (登录态) - 借鉴 NetCloud get_self_playlists
+    """
+    mgr = LoginManager()
+    if not mgr.is_logged_in:
+        raise PermissionError("未登录, 请先调用 login_with_*()")
+
+    from pyncm.apis.user import GetUserPlaylists
+    result = GetUserPlaylists(mgr.user_id, limit=limit)
+    if result.get("code") != 200:
+        raise RuntimeError(f"获取歌单失败: {result.get('msg')}")
+
+    playlists = [
+        {
+            "id": p["id"],
+            "name": p["name"],
+            "track_count": p.get("trackCount", 0),
+            "play_count": p.get("playCount", 0),
+            "creator": p.get("creator", {}).get("nickname", ""),
+            "is_favorite": p.get("specialType") == 5,
+        }
+        for p in result.get("playlist", [])
+    ]
+    return {"user_id": mgr.user_id, "total": len(playlists), "playlists": playlists}
