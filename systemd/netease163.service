@@ -1,0 +1,47 @@
+[Unit]
+Description=netease163 - 网易云音乐爬虫 FastAPI 服务
+Documentation=http://163.d9g.com.cn (待老杨配置 nginx)
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+
+# venv 路径 (SOUL 铁律: 不用 /tmp)
+Environment="PATH=/root/.netease163-venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="PYTHONUNBUFFERED=1"
+Environment="LOG_LEVEL=INFO"
+Environment="API_HOST=127.0.0.1"
+Environment="API_PORT=9700"
+Environment="DATABASE_URL=sqlite:////root/netease163/data/netease163.db"
+
+# 工作目录
+WorkingDirectory=/root/netease163
+
+# 启动命令 (借鉴 NetCloud Helper.get_logger 风格: 写到 logs/)
+ExecStart=/root/.netease163-venv/bin/python -m netease163.api.app
+
+# 重启策略
+Restart=always
+RestartSec=5
+
+# OOM 保护 (SOUL 铁律: 用 systemd-run 或 systemd service 保护)
+OOMScoreAdjust=-100
+OOMPolicy=continue
+MemoryMax=1G
+
+# 日志
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=netease163
+
+# 安全 (基础)
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# 数据
+data/*.db
+data/*.db-journal
+logs/*.log
+
+# venv
+.venv/
+venv/
+
+# env
+.env
+*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
