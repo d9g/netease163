@@ -11,9 +11,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 import os
 import json
 from typing import Optional, List
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy import select, func
 
 from netease163.spiders import (
     LyricSpider, CommentSpider, SearchSpider, SongSpider,
@@ -26,7 +28,7 @@ logger = get_logger("netease163.api")
 # ==================== Pydantic schemas ====================
 class HealthResponse(BaseModel):
     status: str
-    version: str = "0.1.0"
+    version: str = "0.2.0"
     db_url: str
 
 
@@ -77,14 +79,45 @@ class ErrorResponse(BaseModel):
 
 
 # ==================== FastAPI app ====================
+
+
+
+# ==================== Lifespan 启动 ====================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """启动: 初始化 DB + 启动 scheduler"""
+    # 1. 初始化 DB
+    from netease163.storage.db import init_db
+    from netease163.storage.db import get_engine
+    init_db()
+    logger.info("✅ DB 表已初始化")
+
+    # 2. 启动 scheduler (后台线程)
+    try:
+        from netease163.random_crawler import start_scheduler_in_thread
+        start_scheduler_in_thread()
+        logger.info("✅ Scheduler 后台启动")
+    except Exception as e:
+        logger.error(f"❌ Scheduler 启动失败 (不影响 API): {e}")
+
+    yield
+
+    # 关闭: 停 scheduler
+    from netease163.random_crawler.scheduler import get_scheduler
+    sched = get_scheduler()
+    if sched.running:
+        sched.shutdown(wait=False)
+        logger.info("👋 Scheduler 已关闭")
+
+
 app = FastAPI(
     title="netease163 API",
-    description="网易云音乐爬虫 HTTP 服务 (借鉴 163yinyue + NetCloud, pyncm 底层)",
-    version="0.1.0",
+    description="网易云音乐爬虫服务 · 借鉴 NetCloud + 163yinyue · pyncm 底层",
+    version="0.2.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -327,3 +360,111 @@ def api_my_playlists(limit: int = Query(30, ge=1, le=100)):
         raise HTTPException(401, str(e))
     except Exception as e:
         raise HTTPException(500, str(e))
+
+
+
+# ==================== 随机爬取 (后台调度) ====================
+@app.get("/api/v1/random/crawl/now", tags=["随机爬取"])
+def api_random_crawl_now(target: int = Query(10, ge=1, le=50, description="本轮目标数")):
+    """手动触发: 跑一轮随机爬取 (返回 stats)"""
+    from netease163.random_crawler.scheduler import get_crawler
+    try:
+        stats = get_crawler().run_one_round()
+        return {
+            "success": True,
+            "stats": stats,
+            "today_count": get_crawler().today_count,
+            "today_target": 100,
+        }
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/v1/random/keywords", tags=["随机爬取"])
+def api_get_keywords():
+    """查看当前关键词池"""
+    from netease163.random_crawler import get_keyword_pool
+    pool = get_keyword_pool()
+    return {
+        "count": len(pool.get_all()),
+        "keywords": pool.get_all(),
+    }
+
+
+@app.post("/api/v1/random/keywords/extend", tags=["随机爬取"])
+def api_extend_keywords():
+    """手动触发: 从已有 songs.name 扩展关键词池"""
+    from netease163.random_crawler.scheduler import get_crawler
+    try:
+        before = len(get_keyword_pool().get_all())
+        get_crawler().extend_keywords_daily()
+        after = len(get_keyword_pool().get_all())
+        return {"success": True, "before": before, "after": after, "added": after - before}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/v1/stats/crawler", tags=["统计"])
+def api_crawler_stats():
+    """爬取统计: 歌曲数 / 评论数 / 今日累计 / 爬取日志"""
+    from netease163.storage.db import get_session
+    from netease163.storage.models import Song, Comment, CrawlLog
+    session = get_session()
+    try:
+        songs_total = session.execute(select(func.count(Song.id))).scalar() or 0
+        comments_total = session.execute(select(func.count(Comment.id))).scalar() or 0
+        from datetime import datetime, timedelta
+        today = (datetime.now() - timedelta(hours=24)).isoformat()
+        crawls_24h = session.execute(
+            select(func.count(CrawlLog.id)).where(CrawlLog.crawled_at >= today)
+        ).scalar() or 0
+        crawls_success = session.execute(
+            select(func.count(CrawlLog.id)).where(CrawlLog.crawled_at >= today, CrawlLog.success == 1)
+        ).scalar() or 0
+        # 今日入库
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        from sqlalchemy import and_
+        songs_today = session.execute(
+            select(func.count(Song.id)).where(Song.created_at >= today_str)
+        ).scalar() or 0
+        from netease163.random_crawler.scheduler import get_crawler
+        return {
+            "songs_total": songs_total,
+            "songs_today": songs_today,
+            "comments_total": comments_total,
+            "crawls_24h": crawls_24h,
+            "crawls_24h_success_rate": f"{crawls_success}/{crawls_24h}",
+            "crawler_today_count": get_crawler().today_count,
+            "crawler_target": 100,
+            "db_url": get_db_url(),
+        }
+    except Exception as e:
+        raise HTTPException(500, str(e))
+    finally:
+        session.close()
+
+
+@app.get("/api/v1/random/songs/latest", tags=["随机爬取"])
+def api_latest_crawled_songs(limit: int = Query(20, ge=1, le=100)):
+    """最新入库的歌曲"""
+    from netease163.storage.db import get_session
+    from netease163.storage.models import Song
+    session = get_session()
+    try:
+        stmt = select(Song).order_by(Song.created_at.desc()).limit(limit)
+        rows = session.execute(stmt).scalars().all()
+        return {
+            "count": len(rows),
+            "songs": [
+                {
+                    "id": r.id,
+                    "name": r.name,
+                    "artists": r.artists or [],
+                    "album_name": r.album_name,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                }
+                for r in rows
+            ],
+        }
+    finally:
+        session.close()

@@ -301,6 +301,8 @@
                 <button class="menu-item" data-page="album">💿 专辑</button>
                 <button class="menu-item" data-page="radio">📻 电台</button>
                 <button class="menu-item" data-page="toplist">🏆 排行榜</button>
+                <button class="menu-item" data-page="random" style="margin-top: 12px; color: #16a085;">🎲 随机爬取</button>
+                <button class="menu-item" data-page="stats" style="color: #16a085;">📊 爬取统计</button>
                 <button class="menu-item" data-page="login" style="margin-top: 12px; color: #c20c0c;">🔐 登录</button>
                 <button class="menu-item" data-page="my-music" style="color: #c20c0c;">❤️ 我的音乐</button>
             </div>
@@ -319,14 +321,16 @@
         let currentPage = 'search';
 
         // ==================== 工具 ====================
-        async function api(path, params = {}) {
+        async function api(path, params = {}, method = 'GET') {
             const url = new URL(API_BASE + path, window.location.origin);
+            // 后端用 Query 类型, GET 和 POST 都通过 query string 传参
             Object.keys(params).forEach(k => {
                 if (params[k] !== undefined && params[k] !== '') {
                     url.searchParams.append(k, params[k]);
                 }
             });
-            const resp = await fetch(url);
+            const opts = { method };
+            const resp = await fetch(url, opts);
             if (!resp.ok) {
                 const err = await resp.json().catch(() => ({error: resp.statusText}));
                 throw new Error(err.error || err.detail || `HTTP ${resp.status}`);
@@ -366,7 +370,7 @@
 
         async function logout() {
             try {
-                await api('/login/logout', {action: 'do'});
+                await api('/login/logout', {}, 'POST');
                 toast('已登出', 'success');
                 checkLogin();
             } catch (e) {
@@ -511,6 +515,34 @@
                         <button class="btn btn-primary" onclick="doRadio()">查询</button>
                     </div>
                     <div id="result"></div>
+                `
+            },
+            random: {
+                title: '🎲 随机爬取',
+                render: () => `
+                    <h2>🎲 随机爬取 · 后台定时</h2>
+                    <p style="color: #666; font-size: 13px; margin-bottom: 20px;">
+                        选项 C: <strong>榜单 70% + 关键词 30% 混合</strong> · 每天 100+ 首 · 反爬随机间隔 8-25s<br>
+                        每 30 分钟自动跑一轮 · 凌晨 02:00 自动扩展关键词池
+                    </p>
+                    <div class="form-row">
+                        <button class="btn btn-primary" onclick="randomCrawlNow()">🏃 手动跑一轮</button>
+                        <button class="btn btn-primary" onclick="loadLatestSongs()">🎵 最新入库</button>
+                        <button class="btn btn-primary" onclick="loadKeywords()">📚 关键词池</button>
+                        <button class="btn btn-primary" onclick="extendKeywords()">📈 手动扩词</button>
+                    </div>
+                    <div id="result" style="margin-top: 20px;"></div>
+                `
+            },
+            stats: {
+                title: '📊 爬取统计',
+                render: () => `
+                    <h2>📊 爬取统计</h2>
+                    <p style="color: #666; font-size: 13px; margin-bottom: 20px;">
+                        实时统计 - 歌曲数 / 评论数 / 爬取成功率 / 今日目标进度
+                    </p>
+                    <button class="btn btn-primary" onclick="loadStats()">🔄 刷新</button>
+                    <div id="result" style="margin-top: 20px;"></div>
                 `
             },
             toplist: {
@@ -778,7 +810,7 @@
             if (!account || !password) { toast('请输入账号密码', 'error'); return; }
             r.innerHTML = '<p style="color: #999;">⏳ 登录中...</p>';
             try {
-                const data = await api('/login/' + type, {account, password});
+                const data = await api('/login/' + type, {account, password}, 'POST');
                 if (data.success) {
                     toast('登录成功: ' + data.nickname, 'success');
                     checkLogin();
@@ -826,6 +858,108 @@
                 `).join('');
                 r.innerHTML = html;
             } catch (e) { toast('查询失败: ' + e.message + ' (需要登录)', 'error'); r.innerHTML = ''; }
+        }
+
+
+        async function randomCrawlNow() {
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 跑一轮中... (目标 10 首, 大约 2-3 分钟)</p>';
+            try {
+                const data = await api('/random/crawl/now', {target: 10});
+                if (data.success) {
+                    const s = data.stats;
+                    toast('一轮完成: 新入库 ' + s.songs_new + ' 评论 ' + s.comments_new, 'success');
+                    r.innerHTML = `
+                        <div class="login-status logged-in">
+                            ✅ 本轮: 新入库 <strong>${s.songs_new}</strong> 首 · 重复 ${s.songs_dup} · 评论 ${s.comments_new} 条<br>
+                            今日累计: <strong>${data.today_count}</strong> / ${data.today_target} 首
+                        </div>
+                    `;
+                } else {
+                    r.innerHTML = '<pre>' + escapeHtml(JSON.stringify(data, null, 2)) + '</pre>';
+                }
+            } catch (e) { toast('跑轮失败: ' + e.message, 'error'); r.innerHTML = ''; }
+        }
+
+        async function loadLatestSongs() {
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 加载中...</p>';
+            try {
+                const data = await api('/random/songs/latest', {limit: 30});
+                if (data.count === 0) {
+                    r.innerHTML = '<p style="color: #999;">暂无入库歌曲</p>';
+                    return;
+                }
+                r.innerHTML = '<h3 style="margin: 16px 0;">🎵 最新 ' + data.count + ' 首</h3>' +
+                    data.songs.map((s, i) => `
+                        <div class="song-card" onclick="document.getElementById('songId').value=${s.id};showPage('lyric')">
+                            <div class="num">${i+1}</div>
+                            <div class="info">
+                                <div class="name">${escapeHtml(s.name)}</div>
+                                <div class="meta">${(s.artists || []).map(a => escapeHtml(typeof a === 'string' ? a : a.name || '')).join(' / ')} · ${escapeHtml(s.album_name || '')}</div>
+                            </div>
+                        </div>
+                    `).join('');
+            } catch (e) { toast('加载失败: ' + e.message, 'error'); r.innerHTML = ''; }
+        }
+
+        async function loadKeywords() {
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 加载中...</p>';
+            try {
+                const data = await api('/random/keywords');
+                r.innerHTML = `
+                    <h3 style="margin: 16px 0;">📚 关键词池 (共 ${data.count} 个)</h3>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        ${data.keywords.map(k => `<span style="padding: 4px 10px; background: #f0f3ff; border-radius: 12px; font-size: 12px;">${escapeHtml(k)}</span>`).join('')}
+                    </div>
+                `;
+            } catch (e) { toast('加载失败: ' + e.message, 'error'); r.innerHTML = ''; }
+        }
+
+        async function extendKeywords() {
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 扩展中...</p>';
+            try {
+                const data = await api('/random/keywords/extend', {}, 'POST');
+                toast('扩展: ' + data.before + ' → ' + data.after + ' (+' + data.added + ')', 'success');
+                loadKeywords();
+            } catch (e) { toast('扩展失败: ' + e.message, 'error'); r.innerHTML = ''; }
+        }
+
+        async function loadStats() {
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 加载中...</p>';
+            try {
+                const s = await api('/stats/crawler');
+                const pct = Math.round(s.crawler_today_count / s.crawler_target * 100);
+                r.innerHTML = `
+                    <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px;">
+                        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px;">
+                            <div style="font-size: 32px; font-weight: bold;">${s.songs_total}</div>
+                            <div>总入库歌曲</div>
+                            <div style="margin-top: 8px; font-size: 13px;">+${s.songs_today} 今日</div>
+                        </div>
+                        <div style="background: linear-gradient(135deg, #16a085 0%, #1abc9c 100%); color: white; padding: 20px; border-radius: 8px;">
+                            <div style="font-size: 32px; font-weight: bold;">${s.comments_total}</div>
+                            <div>总入库评论</div>
+                        </div>
+                        <div style="background: linear-gradient(135deg, #c20c0c 0%, #e74c3c 100%); color: white; padding: 20px; border-radius: 8px;">
+                            <div style="font-size: 32px; font-weight: bold;">${s.crawls_24h}</div>
+                            <div>24h 爬取次数</div>
+                            <div style="margin-top: 8px; font-size: 13px;">成功率 ${s.crawls_24h_success_rate}</div>
+                        </div>
+                        <div style="background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); color: white; padding: 20px; border-radius: 8px;">
+                            <div style="font-size: 32px; font-weight: bold;">${s.crawler_today_count} / ${s.crawler_target}</div>
+                            <div>今日目标 (${pct}%)</div>
+                            <div style="margin-top: 8px; height: 4px; background: rgba(255,255,255,0.3); border-radius: 2px;">
+                                <div style="height: 4px; background: white; border-radius: 2px; width: ${pct}%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <p style="margin-top: 16px; font-size: 12px; color: #666;">DB: ${s.db_url}</p>
+                `;
+            } catch (e) { toast('加载失败: ' + e.message, 'error'); r.innerHTML = ''; }
         }
 
         async function myFM() {
