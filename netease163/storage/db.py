@@ -16,7 +16,7 @@ _SessionLocal = None
 
 def get_db_url() -> str:
     """获取 DB URL"""
-    return os.getenv("DATABASE_URL") or "sqlite:///data/netease163.db"
+    return os.getenv("DATABASE_URL") or "sqlite:////root/netease163/data/netease163.db"
 
 
 def get_engine():
@@ -29,8 +29,28 @@ def get_engine():
             # 确保 data 目录存在
             db_path = url.replace("sqlite:///", "")
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-            connect_args = {"check_same_thread": False}
-        _engine = create_engine(url, connect_args=connect_args, echo=False, future=True)
+            connect_args = {
+                "check_same_thread": False,
+                # 老杨 18:10 修 readonly database bug
+                # WAL 模式允许读写并发, 避免 uvicorn 主线程 + scheduler 线程同时写导致 readonly
+                "timeout": 30,
+            }
+        _engine = create_engine(
+            url,
+            connect_args=connect_args,
+            pool_pre_ping=True,  # 自动重连失效连接
+            echo=False,
+            future=True,
+        )
+        # SQLite WAL 模式
+        if url.startswith("sqlite"):
+            from sqlalchemy import event
+            @event.listens_for(_engine, "connect")
+            def set_sqlite_pragma(dbapi_connection, connection_record):
+                cursor = dbapi_connection.cursor()
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA synchronous=NORMAL")
+                cursor.close()
     return _engine
 
 

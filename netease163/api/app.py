@@ -395,6 +395,7 @@ def api_get_keywords():
 def api_extend_keywords():
     """手动触发: 从已有 songs.name 扩展关键词池"""
     from netease163.random_crawler.scheduler import get_crawler
+    from netease163.random_crawler.keywords import get_keyword_pool
     try:
         before = len(get_keyword_pool().get_all())
         get_crawler().extend_keywords_daily()

@@ -3,6 +3,7 @@
 SQLAlchemy 2.0 风格, 9 张表
 """
 from datetime import datetime
+from ..api.cst_time import now_cst
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, Index, JSON,
 )
@@ -22,8 +23,8 @@ class Song(Base):
     publish_time = Column(Integer, default=0)  # timestamp ms
     fee = Column(Integer, default=0)
     pic_url = Column(String(1000))
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    created_at = Column(DateTime, default=now_cst)
+    updated_at = Column(DateTime, default=now_cst, onupdate=now_cst)
 
 
 class Artist(Base):
@@ -37,8 +38,8 @@ class Artist(Base):
     album_count = Column(Integer, default=0)
     music_count = Column(Integer, default=0)
     brief_desc = Column(Text)
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    created_at = Column(DateTime, default=now_cst)
+    updated_at = Column(DateTime, default=now_cst, onupdate=now_cst)
 
 
 class Album(Base):
@@ -51,8 +52,8 @@ class Album(Base):
     publish_time = Column(Integer, default=0)
     track_count = Column(Integer, default=0)
     description = Column(Text)
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    created_at = Column(DateTime, default=now_cst)
+    updated_at = Column(DateTime, default=now_cst, onupdate=now_cst)
 
 
 class Playlist(Base):
@@ -65,8 +66,8 @@ class Playlist(Base):
     description = Column(Text)
     track_count = Column(Integer, default=0)
     play_count = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    created_at = Column(DateTime, default=now_cst)
+    updated_at = Column(DateTime, default=now_cst, onupdate=now_cst)
 
 
 # ==================== 评论/歌词 ====================
@@ -81,7 +82,7 @@ class Comment(Base):
     liked_count = Column(Integer, default=0)
     comment_time = Column(Integer, default=0)  # timestamp ms
     is_hot = Column(Integer, default=0)  # 0=普通 1=热门
-    crawled_at = Column(DateTime, default=datetime.now)
+    crawled_at = Column(DateTime, default=now_cst)
 
     __table_args__ = (
         Index("idx_comments_song_time", "song_id", "comment_time"),
@@ -95,7 +96,7 @@ class Lyric(Base):
     song_id = Column(Integer, nullable=False, unique=True, index=True)
     lyric = Column(Text)
     tlyric = Column(Text)
-    crawled_at = Column(DateTime, default=datetime.now)
+    crawled_at = Column(DateTime, default=now_cst)
 
 
 # ==================== 审计/日志 ====================
@@ -107,7 +108,7 @@ class SearchLog(Base):
     keyword = Column(String(200), nullable=False, index=True)
     search_type = Column(String(20), default="song")
     result_count = Column(Integer, default=0)
-    searched_at = Column(DateTime, default=datetime.now, index=True)
+    searched_at = Column(DateTime, default=now_cst, index=True)
 
 
 class CrawlLog(Base):
@@ -120,4 +121,4 @@ class CrawlLog(Base):
     success = Column(Integer, default=1)  # 1=成功 0=失败
     error_msg = Column(Text)
     duration_ms = Column(Integer, default=0)
-    crawled_at = Column(DateTime, default=datetime.now, index=True)
+    crawled_at = Column(DateTime, default=now_cst, index=True)
