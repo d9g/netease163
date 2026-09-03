@@ -9,6 +9,8 @@ htmlcov/
 # 数据 + 日志
 data/*.db
 data/*.db-journal
+data/*.db-wal
+data/*.db-shm
 logs/*.log
 logs/.login_session.json
 data/.gitkeep
