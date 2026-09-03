@@ -572,29 +572,23 @@
             },
             login: {
                 title: '🔐 登录',
+                onShow: () => { setTimeout(() => toggleLoginType(), 50); },
                 render: () => `
                     <h2>🔐 网易云登录</h2>
-                    <p style="color: #666; font-size: 13px; margin-bottom: 20px;">
+                    <p style="color: #666; font-size: 13px; margin-bottom: 16px;">
                         登录后可访问: 我的歌单 · 私人 FM · 每日推荐 · 关注数据<br>
                         登录态保存在服务端, 30 天免重复登录
                     </p>
                     <div class="form-group">
                         <label>登录方式</label>
                         <select id="loginType" onchange="toggleLoginType()">
-                            <option value="phone">📱 手机密码</option>
-                            <option value="email">📧 邮箱密码</option>
+                            <option value="qrcode">📱 扫码登录 (推荐, 绕过风控)</option>
+                            <option value="cookie">🍪 Cookie 登录 (兜底)</option>
+                            <option value="phone">📱 手机密码 (可能被风控)</option>
+                            <option value="email">📧 邮箱密码 (可能被风控)</option>
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label id="accountLabel">手机号</label>
-                        <input id="account" placeholder="13800138000">
-                    </div>
-                    <div class="form-group">
-                        <label>密码</label>
-                        <input id="password" type="password" placeholder="密码">
-                    </div>
-                    <button class="btn btn-primary" onclick="doLogin()">登录</button>
-                    <div id="result"></div>
+                    <div id="loginForm"></div>
                 `
             },
             'my-music': {
@@ -796,10 +790,125 @@
             } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
         }
 
+        let qrCheckTimer = null;
+        let currentUnikey = null;
+
         function toggleLoginType() {
             const type = document.getElementById('loginType').value;
-            document.getElementById('accountLabel').textContent = type === 'phone' ? '手机号' : '邮箱';
-            document.getElementById('account').placeholder = type === 'phone' ? '13800138000' : 'user@example.com';
+            const form = document.getElementById('loginForm');
+            if (type === 'qrcode') {
+                form.innerHTML = `
+                    <p style="color: #16a085; background: #d4edda; padding: 10px; border-radius: 6px; font-size: 13px; margin-bottom: 12px;">
+                        ✅ <strong>扫码登录</strong>: 网易云 App → 我的 → 扫一扫 → 扫描下面二维码 → 点击确认登录<br>
+                        优势: <strong>绕过密码 8821 风控</strong>, 老杨 18:06 拍板
+                    </p>
+                    <div id="qrcodeArea" style="text-align: center; padding: 20px;">
+                        <button class="btn btn-primary" onclick="generateQR()">🔄 生成二维码</button>
+                    </div>
+                    <div id="qrStatus" style="text-align: center; margin-top: 12px; font-size: 13px; color: #666;"></div>
+                `;
+            } else if (type === 'cookie') {
+                form.innerHTML = `
+                    <p style="color: #666; background: #fff3cd; padding: 10px; border-radius: 6px; font-size: 12px; margin-bottom: 12px;">
+                        <strong>Cookie 登录步骤</strong>:<br>
+                        1. 浏览器打开 <a href="https://music.163.com" target="_blank">music.163.com</a> 登录<br>
+                        2. F12 → Console 输入 <code>document.cookie</code><br>
+                        3. 找 <code>MUSIC_U=xxx;</code> 复制 xxx 部分<br>
+                        4. 粘贴到下面输入框
+                    </p>
+                    <div class="form-group">
+                        <label>MUSIC_U 值</label>
+                        <input id="musicU" placeholder="粘贴 MUSIC_U 值">
+                    </div>
+                    <button class="btn btn-primary" onclick="doCookieLogin()">Cookie 登录</button>
+                    <div id="result" style="margin-top: 12px;"></div>
+                `;
+            } else {
+                form.innerHTML = `
+                    <p style="color: #856404; background: #fff3cd; padding: 10px; border-radius: 6px; font-size: 12px; margin-bottom: 12px;">
+                        ⚠️ 密码登录可能被网易云 8821 风控拦截, 失败请用扫码/Cookie
+                    </p>
+                    <div class="form-group">
+                        <label id="accountLabel">手机号</label>
+                        <input id="account" placeholder="13800138000">
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <input id="password" type="password" placeholder="密码">
+                    </div>
+                    <button class="btn btn-primary" onclick="doLogin()">登录</button>
+                    <div id="result" style="margin-top: 12px;"></div>
+                `;
+                document.getElementById('accountLabel').textContent = type === 'phone' ? '手机号' : '邮箱';
+                document.getElementById('account').placeholder = type === 'phone' ? '13800138000' : 'user@example.com';
+            }
+        }
+
+        async function generateQR() {
+            const area = document.getElementById('qrcodeArea');
+            const status = document.getElementById('qrStatus');
+            area.innerHTML = '<p style="color: #999;">⏳ 生成中...</p>';
+            try {
+                const data = await api('/login/qrcode');
+                if (data.qr_base64) {
+                    currentUnikey = data.unikey;
+                    area.innerHTML = `
+                        <img src="${data.qr_base64}" style="max-width: 280px; border: 1px solid #eee; padding: 8px; background: white;" />
+                        <p style="margin-top: 8px; font-size: 11px; color: #999;">${data.qr_url.substring(0, 50)}...</p>
+                    `;
+                    status.innerHTML = '⏳ 等待扫码...';
+                    // 启动轮询
+                    if (qrCheckTimer) clearInterval(qrCheckTimer);
+                    qrCheckTimer = setInterval(() => checkQR(), 2000);
+                    // 3 分钟自动停止
+                    setTimeout(() => {
+                        if (qrCheckTimer) { clearInterval(qrCheckTimer); status.innerHTML = '⏰ 二维码可能已过期, 请重新生成'; }
+                    }, 180000);
+                } else {
+                    area.innerHTML = '<p style="color: #dc3545;">❌ 生成失败</p>';
+                }
+            } catch (e) { area.innerHTML = '<p style="color: #dc3545;">❌ ' + e.message + '</p>'; }
+        }
+
+        async function checkQR() {
+            if (!currentUnikey) return;
+            try {
+                const data = await api('/login/qrcode/check', {unikey: currentUnikey});
+                const status = document.getElementById('qrStatus');
+                if (data.status === 0) {
+                    status.innerHTML = '📱 等待扫码... (用网易云 App)';
+                } else if (data.status === 1) {
+                    status.innerHTML = '✅ 已扫码, 请在手机上<strong>点确认</strong>';
+                } else if (data.status === 2 || data.status === 803) {
+                    status.innerHTML = `<span style="color: #28a745; font-size: 16px;">🎉 登录成功: ${escapeHtml(data.nickname || data.user_id)}</span>`;
+                    if (qrCheckTimer) clearInterval(qrCheckTimer);
+                    toast('扫码登录成功!', 'success');
+                    setTimeout(() => checkLogin(), 1000);
+                } else if (data.status === 8821) {
+                    status.innerHTML = '<span style="color: #dc3545;">⏰ 二维码已过期, 请重新生成</span>';
+                    if (qrCheckTimer) clearInterval(qrCheckTimer);
+                } else {
+                    status.innerHTML = `状态: ${data.message} (code=${data.code})`;
+                }
+            } catch (e) { /* 忽略单次错误 */ }
+        }
+
+        async function doCookieLogin() {
+            const musicU = document.getElementById('musicU').value.trim();
+            const r = document.getElementById('result');
+            if (!musicU) { toast('请粘贴 MUSIC_U 值', 'error'); return; }
+            r.innerHTML = '<p style="color: #999;">⏳ 登录中...</p>';
+            try {
+                const data = await api('/login/cookie', {music_u: musicU}, 'POST');
+                if (data.success) {
+                    toast('登录成功: ' + (data.nickname || data.user_id), 'success');
+                    checkLogin();
+                    r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+                } else {
+                    toast('登录失败: ' + data.error, 'error');
+                    r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+                }
+            } catch (e) { toast('登录失败: ' + e.message, 'error'); r.innerHTML = ''; }
         }
 
         async function doLogin() {
@@ -976,6 +1085,7 @@
             currentPage = name;
             document.querySelectorAll('.menu-item').forEach(el => el.classList.toggle('active', el.dataset.page === name));
             document.getElementById('content').innerHTML = pages[name].render();
+            if (pages[name].onShow) pages[name].onShow();
         }
 
         document.querySelectorAll('.menu-item').forEach(el => {

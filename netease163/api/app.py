@@ -468,3 +468,36 @@ def api_latest_crawled_songs(limit: int = Query(20, ge=1, le=100)):
         }
     finally:
         session.close()
+
+
+
+# ==================== 扫码登录 (老杨 18:06 路径 A - 绕过 8821 风控) ====================
+@app.get("/api/v1/login/qrcode", tags=["登录"])
+def api_qrcode_generate():
+    """生成扫码登录二维码 (返回 base64 图片)"""
+    from netease163.login import generate_qr_key
+    try:
+        return generate_qr_key()
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/v1/login/qrcode/check", tags=["登录"])
+def api_qrcode_check(unikey: str = Query(..., description="扫码 unikey")):
+    """轮询扫码状态: 0=等待扫码 1=已扫码待确认 2/803=成功 8821=过期"""
+    from netease163.login import check_qr_login
+    return check_qr_login(unikey)
+
+
+@app.post("/api/v1/login/cookie", tags=["登录"])
+def api_login_cookie(music_u: str = Query(..., description="MUSIC_U cookie 值")):
+    """Cookie 兜底登录 (浏览器复制的 MUSIC_U)
+
+    步骤:
+    1. 浏览器打开 music.163.com 登录
+    2. F12 → Console 输入 document.cookie
+    3. 找 MUSIC_U=xxx; 复制值 (只要 MUSIC_U= 后面的部分)
+    4. 调用本接口
+    """
+    from netease163.login import login_via_cookie
+    return login_via_cookie(music_u=music_u)
