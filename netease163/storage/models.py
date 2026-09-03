@@ -23,6 +23,7 @@ class Song(Base):
     publish_time = Column(Integer, default=0)  # timestamp ms
     fee = Column(Integer, default=0)
     pic_url = Column(String(1000))
+    comment_total = Column(Integer, default=0)  # 评论总数 (search 时填)
     created_at = Column(DateTime, default=now_cst)
     updated_at = Column(DateTime, default=now_cst, onupdate=now_cst)
 

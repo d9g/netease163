@@ -493,6 +493,42 @@ def get_candidates(
         raise HTTPException(400, "type 必须为 song/artist/album/playlist")
     try:
         candidates = search_by_name(q, type, limit=limit)
+        # song 类型额外加 comment_total (DB 有则用 DB, 无则实时拉)
+        if type == "song":
+            from netease163.storage.db import get_session
+            from netease163.storage.models import Song
+            session = get_session()
+            try:
+                song_ids = [c["id"] for c in candidates if c.get("id")]
+                # DB 查
+                if song_ids:
+                    stmt = select(Song).where(Song.id.in_(song_ids))
+                    db_songs = {s.id: s for s in session.execute(stmt).scalars().all()}
+                else:
+                    db_songs = {}
+            finally:
+                session.close()
+            # 实时拉评论数 (DB 没数据的)
+            from netease163.spiders.comment import CommentSpider
+            spider = CommentSpider()
+            for c in candidates:
+                song_id = c.get("id")
+                if not song_id:
+                    c["comment_total"] = 0
+                    continue
+                db_s = db_songs.get(song_id)
+                if db_s and (db_s.comment_total or 0) > 0:
+                    c["comment_total"] = db_s.comment_total
+                    c["in_db"] = True
+                else:
+                    # 实时拉 (仅前 8 个, 后续默认 0)
+                    try:
+                        cr = spider.safe_fetch(song_id, limit=1)
+                        c["comment_total"] = (cr or {}).get("total", 0)
+                        c["in_db"] = False
+                    except Exception:
+                        c["comment_total"] = 0
+                        c["in_db"] = False
         return {"q": q, "type": type, "count": len(candidates), "candidates": candidates}
     except Exception as e:
         raise HTTPException(500, "搜索失败, 请稍后再试")

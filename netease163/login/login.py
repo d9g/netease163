@@ -228,18 +228,20 @@ def get_my_playlists(limit: int = 30) -> Dict[str, Any]:
     if result.get("code") != 200:
         raise RuntimeError(f"获取歌单失败: {result.get('msg')}")
 
-    playlists = [
-        {
-            "id": p["id"],
-            "name": p["name"],
-            "track_count": p.get("trackCount", 0),
-            "play_count": p.get("playCount", 0),
-            "creator": p.get("creator", {}).get("nickname", ""),
+    playlists = []
+    for p in result.get("playlist") or []:
+        if not p:
+            continue
+        creator_obj = p.get("creator") or {}
+        playlists.append({
+            "id": p.get("id", 0),
+            "name": p.get("name", ""),
+            "track_count": p.get("trackCount", 0) or 0,
+            "play_count": p.get("playCount", 0) or 0,
+            "creator": creator_obj.get("nickname", "") if isinstance(creator_obj, dict) else "",
             "is_favorite": p.get("specialType") == 5,
-        }
-        for p in result.get("playlist", [])
-    ]
-    return {"user_id": mgr.user_id, "total": len(playlists), "playlists": playlists}
+        })
+    return {"user_id": mgr.user_id or 0, "nickname": getattr(mgr, 'nickname', '') or '', "total": len(playlists), "playlists": playlists}
 
 
 
