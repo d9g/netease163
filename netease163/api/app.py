@@ -21,7 +21,7 @@ from netease163.spiders import (
     LyricSpider, CommentSpider, SearchSpider, SongSpider,
     PlaylistSpider, ArtistSpider, AlbumSpider, RadioSpider, ToplistSpider,
 )
-from netease163.utils import get_logger, get_db_url
+from netease163.utils import get_logger
 
 logger = get_logger("netease163.api")
 
@@ -29,7 +29,6 @@ logger = get_logger("netease163.api")
 class HealthResponse(BaseModel):
     status: str
     version: str = "0.2.0"
-    db_url: str
 
 
 class LyricResponse(BaseModel):
@@ -139,7 +138,6 @@ def root():
     return {
         "status": "ok",
         "version": "0.1.0",
-        "db_url": get_db_url(),
     }
 
 
@@ -437,7 +435,6 @@ def api_crawler_stats():
             "crawls_24h_success_rate": f"{crawls_success}/{crawls_24h}",
             "crawler_today_count": get_crawler().today_count,
             "crawler_target": 100,
-            "db_url": get_db_url(),
         }
     except Exception as e:
         raise HTTPException(500, str(e))

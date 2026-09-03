@@ -582,7 +582,7 @@
                     <div class="form-group">
                         <label>登录方式</label>
                         <select id="loginType" onchange="toggleLoginType()">
-                            <option value="qrcode">📱 扫码登录 (推荐, 绕过风控)</option>
+                            <option value="qrcode">📱 扫码登录 (推荐)</option>
                             <option value="cookie">🍪 Cookie 登录 (兜底)</option>
                             <option value="phone">📱 手机密码 (可能被风控)</option>
                             <option value="email">📧 邮箱密码 (可能被风控)</option>
@@ -600,9 +600,7 @@
                     </p>
                     <div class="form-row">
                         <button class="btn btn-primary" onclick="myFav()">❤️ 我的红心歌单</button>
-                        <button class="btn btn-primary" onclick="myRecommend()">🎁 每日推荐</button>
-                        <button class="btn btn-primary" onclick="myFM()">🎵 私人 FM</button>
-                    </div>
+                                                                    </div>
                     <div id="result"></div>
                 `
             }
@@ -800,7 +798,7 @@
                 form.innerHTML = `
                     <p style="color: #16a085; background: #d4edda; padding: 10px; border-radius: 6px; font-size: 13px; margin-bottom: 12px;">
                         ✅ <strong>扫码登录</strong>: 网易云 App → 我的 → 扫一扫 → 扫描下面二维码 → 点击确认登录<br>
-                        优势: <strong>绕过密码 8821 风控</strong>, 老杨 18:06 拍板
+                        优势: <strong>更便捷的登录方式</strong>, 
                     </p>
                     <div id="qrcodeArea" style="text-align: center; padding: 20px;">
                         <button class="btn btn-primary" onclick="generateQR()">🔄 生成二维码</button>
@@ -901,14 +899,13 @@
             try {
                 const data = await api('/login/cookie', {music_u: musicU}, 'POST');
                 if (data.success) {
-                    toast('登录成功: ' + (data.nickname || data.user_id), 'success');
                     checkLogin();
-                    r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+                    r.innerHTML = `<div class="login-status logged-in">✅ 登录成功 · ${escapeHtml(data.nickname || '')} (uid: ${data.user_id})<br><a href="javascript:void(0)" onclick="showPage('my-music')">查看我的音乐</a></div>`;
                 } else {
                     toast('登录失败: ' + data.error, 'error');
-                    r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+                    r.innerHTML = `<div class="login-status logged-out">❌ ${escapeHtml(data.error)}<br><small>提示: 请确认 MUSIC_U 是从已登录的 music.163.com 复制的</small></div>`;
                 }
-            } catch (e) { toast('登录失败: ' + e.message, 'error'); r.innerHTML = ''; }
+            } catch (e) { toast('登录失败', 'error'); r.innerHTML = `<div class="login-status logged-out">❌ 服务异常, 请稍后再试</div>`; }
         }
 
         async function doLogin() {
@@ -921,14 +918,13 @@
             try {
                 const data = await api('/login/' + type, {account, password}, 'POST');
                 if (data.success) {
-                    toast('登录成功: ' + data.nickname, 'success');
                     checkLogin();
-                    r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+                    r.innerHTML = `<div class="login-status logged-in">✅ 登录成功 · ${escapeHtml(data.nickname || '')}<br><a href="javascript:void(0)" onclick="showPage('my-music')">查看我的音乐</a></div>`;
                 } else {
-                    toast('登录失败: ' + data.error, 'error');
-                    r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+                    toast('登录失败', 'error');
+                    r.innerHTML = `<div class="login-status logged-out">❌ 登录失败<br><small>密码登录可能被风控, 建议使用扫码或 Cookie 登录</small></div>`;
                 }
-            } catch (e) { toast('登录失败: ' + e.message, 'error'); r.innerHTML = ''; }
+            } catch (e) { toast('登录失败', 'error'); r.innerHTML = `<div class="login-status logged-out">❌ 服务异常, 请稍后再试</div>`; }
         }
 
         async function myFav() {
@@ -950,24 +946,6 @@
             } catch (e) { toast('查询失败: ' + e.message + ' (需要登录)', 'error'); r.innerHTML = ''; }
         }
 
-        async function myRecommend() {
-            const r = document.getElementById('result');
-            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
-            try {
-                const data = await api('/my/recommend');
-                let html = `<h3>🎁 每日推荐</h3>`;
-                html += (data.songs || []).map((t, i) => `
-                    <div class="song-card" onclick="fillSongId(${t.id})">
-                        <div class="num">${i+1}</div>
-                        <div class="info">
-                            <div class="name">${escapeHtml(t.name)}</div>
-                            <div class="meta">${(t.artists || []).map(a => escapeHtml(a.name || a)).join(' / ')}</div>
-                        </div>
-                    </div>
-                `).join('');
-                r.innerHTML = html;
-            } catch (e) { toast('查询失败: ' + e.message + ' (需要登录)', 'error'); r.innerHTML = ''; }
-        }
 
 
         async function randomCrawlNow() {
@@ -1066,19 +1044,11 @@
                             </div>
                         </div>
                     </div>
-                    <p style="margin-top: 16px; font-size: 12px; color: #666;">DB: ${s.db_url}</p>
+                    
                 `;
             } catch (e) { toast('加载失败: ' + e.message, 'error'); r.innerHTML = ''; }
         }
 
-        async function myFM() {
-            const r = document.getElementById('result');
-            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
-            try {
-                const data = await api('/my/fm');
-                r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
-            } catch (e) { toast('查询失败: ' + e.message + ' (需要登录)', 'error'); r.innerHTML = ''; }
-        }
 
         // ==================== 导航 ====================
         function showPage(name) {

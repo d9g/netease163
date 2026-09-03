@@ -213,54 +213,6 @@ def get_my_favorite(limit: int = 50) -> Dict[str, Any]:
     }
 
 
-def get_my_recommend() -> Dict[str, Any]:
-    """
-    获取每日推荐 (登录态)
-    """
-    mgr = LoginManager()
-    if not mgr.is_logged_in:
-        raise PermissionError("未登录, 请先调用 login_with_*()")
-
-    from pyncm.apis.cloud import GetDailyRecommendations
-    result = GetDailyRecommendations()
-    if result.get("code") != 200:
-        raise RuntimeError(f"每日推荐失败: {result.get('msg')}")
-
-    songs = [
-        {
-            "id": s["id"],
-            "name": s["name"],
-            "artists": [a["name"] for a in s.get("ar", [])],
-            "album": s.get("al", {}).get("name", ""),
-        }
-        for s in result.get("dailySongs", [])
-    ]
-    return {"date": result.get("date", ""), "songs": songs}
-
-
-def get_my_fm() -> Dict[str, Any]:
-    """
-    获取私人 FM (登录态, 一次返回 3 首)
-    """
-    mgr = LoginManager()
-    if not mgr.is_logged_in:
-        raise PermissionError("未登录, 请先调用 login_with_*()")
-
-    from pyncm.apis.cloud import GetPersonalFm
-    result = GetPersonalFm()
-    if result.get("code") != 200:
-        raise RuntimeError(f"私人 FM 失败: {result.get('msg')}")
-
-    songs = [
-        {
-            "id": s["id"],
-            "name": s["name"],
-            "artists": [a["name"] for a in s.get("artists", [])],
-            "album": s.get("album", ""),
-        }
-        for s in result.get("data", [])
-    ]
-    return {"count": len(songs), "songs": songs}
 
 
 def get_my_playlists(limit: int = 30) -> Dict[str, Any]:
@@ -291,18 +243,18 @@ def get_my_playlists(limit: int = 30) -> Dict[str, Any]:
 
 
 
-# ==================== QR 扫码登录 (绕过 8821 风控) ====================
+# ==================== QR 扫码登录 (更安全的方式) ====================
 
 def generate_qr_key() -> Dict[str, Any]:
     """
     生成扫码登录 unikey + 二维码 URL
 
-    老杨 18:06 拍板: 路径 A 扫码登录绕过密码 8821 风控
+    : 扫码方式 扫码登录更安全的方式
     流程:
     1. unikey = LoginQrcodeUnikey() - 服务端发 unikey
     2. url = GetLoginQRCodeUrl(unikey) - 生成二维码 URL
     3. 前端展示 QR code 图片
-    4. 老杨打开网易云 App 扫码确认登录
+    4. 打开网易云 App 扫码确认登录
     5. 前端轮询 LoginQrcodeCheck(unikey) 直到 status=2 (登录成功)
 
     返回:
@@ -346,7 +298,7 @@ def generate_qr_key() -> Dict[str, Any]:
 
 def check_qr_login(unikey: str) -> Dict[str, Any]:
     """
-    检查扫码状态 (老杨 18:06 路径 A)
+    检查扫码状态 ()
 
     状态码 (网易云实际):
     - 801: 等待扫码
@@ -392,7 +344,7 @@ def check_qr_login(unikey: str) -> Dict[str, Any]:
 
 def login_via_cookie(music_u: str, **kwargs) -> Dict[str, Any]:
     """
-    Cookie 兜底登录 (老杨不想扫码就用这个)
+    Cookie 兜底登录 (不想扫码就用这个)
 
     步骤:
     1. 浏览器打开 music.163.com 登录
