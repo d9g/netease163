@@ -17,7 +17,7 @@ class ArtistSpider(BaseSpider):
         if result.get("code") != 200:
             raise RuntimeError(f"API code={result.get('code')}")
 
-        a = result.get("artist", {})
+        a = result.get("data", {}).get("artist") or result.get("artist") or {}
         if not a:
             raise ValueError(f"歌手 {artist_id} 不存在")
 

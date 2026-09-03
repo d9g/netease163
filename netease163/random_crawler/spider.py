@@ -2,12 +2,12 @@
 随机爬虫 - 选项 C (榜单 70% + 关键词 30% 混合)
 
 设计:
-- 每天目标 100+ 首 (老杨要求)
+- 每天目标 100+ 首 (需求)
 - 反爬: 随机间隔 8-25 秒
 - 增量: 已入库的 song 跳过
 - 持久化: songs + comments + crawl_logs
 
-调度策略 (老杨需求):
+调度策略 (需求):
 - 每 30 分钟跑一轮 (24h × 2 = 48 次/天)
 - 每轮: 榜单 5-7 首 + 关键词 3-5 首 ≈ 10 首/轮
 - 48 × 10 = 480 次/天 (远大于 100 首/天目标)
@@ -34,7 +34,7 @@ MIN_INTERVAL = 8  # 最小间隔秒
 MAX_INTERVAL = 25  # 最大间隔秒
 
 # 每天目标
-DAILY_TARGET = 100  # 老杨要求 100+ 首/天
+DAILY_TARGET = 100  # 需求 100+ 首/天
 
 # 每轮目标
 ROUND_TOPLIST_SONGS = 6  # 每轮从榜单取 6 首
@@ -271,7 +271,7 @@ class RandomCrawler:
         return stats
 
     def run_until_target(self, target: int = DAILY_TARGET, max_minutes: int = 240):
-        """跑到目标数 (老杨的"100+ 首/天"用循环满足)"""
+        """跑到目标数 ("100+ 首/天"用循环满足)"""
         self._reset_if_new_day()
         start = time.time()
         while self.today_count < target and (time.time() - start) < max_minutes * 60:

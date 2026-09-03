@@ -147,6 +147,37 @@ def health():
     return root()
 
 
+@app.get("/api/v1/comment/by-name", tags=["爬虫"])
+def get_comment_by_name(
+    q: str = Query(..., description="歌曲名"),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """按歌曲名搜评论 - 重名时展示评论数, 用户选定后调 /comment/{song_id}"""
+    from netease163.spiders.search_helpers import search_by_name
+    from netease163.spiders import CommentSpider
+    candidates_data = search_by_name(q, "song", limit=8)
+    # 拿每首歌评论数 (10 个以内)
+    out = []
+    spider = CommentSpider()
+    for c in candidates_data:
+        song_id = c.get("id")
+        if not song_id:
+            continue
+        try:
+            cr = spider.safe_fetch(song_id, limit=1)
+            count = cr.get("total", 0) if cr else 0
+        except Exception:
+            count = 0
+        out.append({
+            **c,
+            "comment_total": count,
+            "song_id": song_id,
+        })
+    return {"q": q, "count": len(out), "candidates": out}
+
+
+
+
 # ==================== 歌词 ====================
 @app.get("/api/v1/lyric/{song_id}", response_model=LyricResponse, tags=["爬虫"])
 def get_lyric(song_id: int):
@@ -324,30 +355,6 @@ def api_my_favorite(limit: int = Query(50, ge=1, le=200)):
         raise HTTPException(500, str(e))
 
 
-@app.get("/api/v1/my/recommend", tags=["我的音乐"])
-def api_my_recommend():
-    """每日推荐歌单"""
-    from netease163.login import get_my_recommend
-    try:
-        return get_my_recommend()
-    except PermissionError as e:
-        raise HTTPException(401, str(e))
-    except Exception as e:
-        raise HTTPException(500, str(e))
-
-
-@app.get("/api/v1/my/fm", tags=["我的音乐"])
-def api_my_fm():
-    """私人 FM"""
-    from netease163.login import get_my_fm
-    try:
-        return get_my_fm()
-    except PermissionError as e:
-        raise HTTPException(401, str(e))
-    except Exception as e:
-        raise HTTPException(500, str(e))
-
-
 @app.get("/api/v1/my/playlists", tags=["我的音乐"])
 def api_my_playlists(limit: int = Query(30, ge=1, le=100)):
     """我的所有歌单"""
@@ -469,7 +476,30 @@ def api_latest_crawled_songs(limit: int = Query(20, ge=1, le=100)):
 
 
 
-# ==================== 扫码登录 (老杨 18:06 路径 A - 绕过 8821 风控) ====================
+# ==================== 扫码登录 (更便捷方式) ====================
+
+
+
+# ==================== 按名称搜索 ====================
+@app.get("/api/v1/candidates", tags=["搜索"])
+def get_candidates(
+    q: str = Query(..., description="名称关键词"),
+    type: str = Query("song", description="song/artist/album/playlist"),
+    limit: int = Query(10, ge=1, le=30),
+):
+    """按名称搜索 - 返回重名候选列表, 给前端做二次筛选"""
+    from netease163.spiders.search_helpers import search_by_name
+    if type not in ("song", "artist", "album", "playlist"):
+        raise HTTPException(400, "type 必须为 song/artist/album/playlist")
+    try:
+        candidates = search_by_name(q, type, limit=limit)
+        return {"q": q, "type": type, "count": len(candidates), "candidates": candidates}
+    except Exception as e:
+        raise HTTPException(500, "搜索失败, 请稍后再试")
+
+
+
+
 @app.get("/api/v1/login/qrcode", tags=["登录"])
 def api_qrcode_generate():
     """生成扫码登录二维码 (返回 base64 图片)"""

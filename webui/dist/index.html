@@ -381,26 +381,16 @@
         // ==================== 页面 ====================
         const pages = {
             search: {
-                title: '🔍 搜索',
+                title: '🔍 搜索歌曲',
                 render: () => `
-                    <h2>🔍 搜索</h2>
+                    <h2>🔍 搜索歌曲</h2>
+                    <p style="color: #666; font-size: 13px; margin-bottom: 16px;">
+                        搜索结果展示歌曲卡片, 点击可查看 <strong>歌曲详情 + 评论</strong>
+                    </p>
                     <div class="form-row">
                         <div class="form-group">
                             <label>关键词</label>
-                            <input id="kw" placeholder="林俊杰 / 江南 / 周杰伦" value="林俊杰">
-                        </div>
-                        <div class="form-group">
-                            <label>类型</label>
-                            <select id="type">
-                                <option value="song">歌曲</option>
-                                <option value="artist">歌手</option>
-                                <option value="album">专辑</option>
-                                <option value="playlist">歌单</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>条数</label>
-                            <input id="limit" type="number" value="10" min="1" max="100">
+                            <input id="searchKw" placeholder="如: 七里香" value="七里香">
                         </div>
                         <button class="btn btn-primary" onclick="doSearch()">搜索</button>
                     </div>
@@ -411,12 +401,15 @@
                 title: '📝 歌词',
                 render: () => `
                     <h2>📝 歌词</h2>
+                    <p style="color: #666; font-size: 13px; margin-bottom: 16px;">
+                        按 <strong>歌曲名</strong> 搜索 → 选 ID → 查看歌词
+                    </p>
                     <div class="form-row">
                         <div class="form-group">
-                            <label>歌曲 ID</label>
-                            <input id="songId" placeholder="1062642" value="1062642">
+                            <label>歌曲名</label>
+                            <input id="lyricName" placeholder="如: Always Online" value="Always Online">
                         </div>
-                        <button class="btn btn-primary" onclick="doLyric()">查询</button>
+                        <button class="btn btn-primary" onclick="lyricSearch()">搜索歌曲</button>
                     </div>
                     <div id="result"></div>
                 `
@@ -425,20 +418,15 @@
                 title: '💬 评论',
                 render: () => `
                     <h2>💬 评论</h2>
+                    <p style="color: #666; font-size: 13px; margin-bottom: 16px;">
+                        按 <strong>歌曲名</strong> 搜索 → 看评论数 → 选定歌曲看评论
+                    </p>
                     <div class="form-row">
                         <div class="form-group">
-                            <label>歌曲 ID</label>
-                            <input id="songId" placeholder="1062642" value="1062642">
+                            <label>歌曲名</label>
+                            <input id="commentName" placeholder="如: 七里香" value="七里香">
                         </div>
-                        <div class="form-group">
-                            <label>条数</label>
-                            <input id="limit" type="number" value="20" min="1" max="100">
-                        </div>
-                        <div class="form-group">
-                            <label>分页偏移</label>
-                            <input id="offset" type="number" value="0" min="0">
-                        </div>
-                        <button class="btn btn-primary" onclick="doComment()">查询</button>
+                        <button class="btn btn-primary" onclick="commentSearch()">搜索歌曲</button>
                     </div>
                     <div id="result"></div>
                 `
@@ -447,12 +435,15 @@
                 title: '🎵 歌曲详情',
                 render: () => `
                     <h2>🎵 歌曲详情</h2>
+                    <p style="color: #666; font-size: 13px; margin-bottom: 16px;">
+                        按 <strong>歌名</strong> 搜索 → 选 ID → 看歌曲详情
+                    </p>
                     <div class="form-row">
                         <div class="form-group">
-                            <label>歌曲 ID</label>
-                            <input id="songId" placeholder="1062642" value="1062642">
+                            <label>歌曲名</label>
+                            <input id="songName" placeholder="如: 七里香" value="七里香">
                         </div>
-                        <button class="btn btn-primary" onclick="doSong()">查询</button>
+                        <button class="btn btn-primary" onclick="songSearch()">搜索歌曲</button>
                     </div>
                     <div id="result"></div>
                 `
@@ -460,13 +451,16 @@
             playlist: {
                 title: '📋 歌单',
                 render: () => `
-                    <h2>📋 歌单详情</h2>
+                    <h2>📋 歌单</h2>
+                    <p style="color: #666; font-size: 13px; margin-bottom: 16px;">
+                        按 <strong>歌单名</strong> 搜索 → 选 ID → 看歌单内容
+                    </p>
                     <div class="form-row">
                         <div class="form-group">
-                            <label>歌单 ID (例: 19723756=飙升榜)</label>
-                            <input id="playlistId" value="19723756">
+                            <label>歌单名</label>
+                            <input id="playlistName" placeholder="如: 周杰伦" value="周杰伦">
                         </div>
-                        <button class="btn btn-primary" onclick="doPlaylist()">查询</button>
+                        <button class="btn btn-primary" onclick="playlistSearch()">搜索歌单</button>
                     </div>
                     <div id="result"></div>
                 `
@@ -474,13 +468,16 @@
             artist: {
                 title: '👤 歌手',
                 render: () => `
-                    <h2>👤 歌手详情</h2>
+                    <h2>👤 歌手</h2>
+                    <p style="color: #666; font-size: 13px; margin-bottom: 16px;">
+                        按 <strong>歌手名</strong> 搜索 → 选 ID → 看歌手资料
+                    </p>
                     <div class="form-row">
                         <div class="form-group">
-                            <label>歌手 ID</label>
-                            <input id="artistId" placeholder="5781" value="5781">
+                            <label>歌手名</label>
+                            <input id="artistName" placeholder="如: 周杰伦" value="周杰伦">
                         </div>
-                        <button class="btn btn-primary" onclick="doArtist()">查询</button>
+                        <button class="btn btn-primary" onclick="artistSearch()">搜索歌手</button>
                     </div>
                     <div id="result"></div>
                 `
@@ -488,13 +485,16 @@
             album: {
                 title: '💿 专辑',
                 render: () => `
-                    <h2>💿 专辑详情</h2>
+                    <h2>💿 专辑</h2>
+                    <p style="color: #666; font-size: 13px; margin-bottom: 16px;">
+                        按 <strong>专辑名</strong> 搜索 → 选 ID → 看专辑曲目
+                    </p>
                     <div class="form-row">
                         <div class="form-group">
-                            <label>专辑 ID</label>
-                            <input id="albumId" value="110808">
+                            <label>专辑名</label>
+                            <input id="albumName" placeholder="如: 范特西" value="范特西">
                         </div>
-                        <button class="btn btn-primary" onclick="doAlbum()">查询</button>
+                        <button class="btn btn-primary" onclick="albumSearch()">搜索专辑</button>
                     </div>
                     <div id="result"></div>
                 `
@@ -502,17 +502,29 @@
             radio: {
                 title: '📻 电台',
                 render: () => `
-                    <h2>📻 电台节目</h2>
+                    <h2>📻 电台</h2>
+                    <p style="color: #666; font-size: 13px; margin-bottom: 16px;">
+                        网易云电台 ID 较少, 可尝试常见 ID 或按名称搜
+                    </p>
                     <div class="form-row">
                         <div class="form-group">
                             <label>电台 ID</label>
-                            <input id="radioId" value="350">
+                            <input id="radioId" placeholder="如: 3" value="3">
                         </div>
-                        <div class="form-group">
-                            <label>条数</label>
-                            <input id="limit" type="number" value="20" min="1" max="100">
-                        </div>
-                        <button class="btn btn-primary" onclick="doRadio()">查询</button>
+                        <button class="btn btn-primary" onclick="radioLoad()">加载电台</button>
+                    </div>
+                    <div id="result"></div>
+                `
+            },
+            toplist: {
+                title: '🏆 排行榜',
+                render: () => `
+                    <h2>🏆 排行榜</h2>
+                    <p style="color: #666; font-size: 13px; margin-bottom: 16px;">
+                        6 大榜单, 点击歌曲可查看 <strong>歌曲详情 + 评论</strong>
+                    </p>
+                    <div class="form-row">
+                        <button class="btn btn-primary" onclick="loadToplists()">📋 榜单列表</button>
                     </div>
                     <div id="result"></div>
                 `
@@ -522,7 +534,7 @@
                 render: () => `
                     <h2>🎲 随机爬取 · 后台定时</h2>
                     <p style="color: #666; font-size: 13px; margin-bottom: 20px;">
-                        选项 C: <strong>榜单 70% + 关键词 30% 混合</strong> · 每天 100+ 首 · 反爬随机间隔 8-25s<br>
+                        榜单 70% + 关键词 30% 混合 · 每天 100+ 首 · 反爬随机间隔 8-25s<br>
                         每 30 分钟自动跑一轮 · 凌晨 02:00 自动扩展关键词池
                     </p>
                     <div class="form-row">
@@ -543,31 +555,6 @@
                     </p>
                     <button class="btn btn-primary" onclick="loadStats()">🔄 刷新</button>
                     <div id="result" style="margin-top: 20px;"></div>
-                `
-            },
-            toplist: {
-                title: '🏆 排行榜',
-                render: () => `
-                    <h2>🏆 排行榜</h2>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label>榜单</label>
-                            <select id="name">
-                                <option value="hot">热歌榜</option>
-                                <option value="soar">飙升榜</option>
-                                <option value="new">新歌榜</option>
-                                <option value="original">原创榜</option>
-                                <option value="electronic">电音榜</option>
-                                <option value="ACG">ACG 榜</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label>条数</label>
-                            <input id="limit" type="number" value="30" min="1" max="200">
-                        </div>
-                        <button class="btn btn-primary" onclick="doToplist()">查询</button>
-                    </div>
-                    <div id="result"></div>
                 `
             },
             login: {
@@ -600,193 +587,365 @@
                     </p>
                     <div class="form-row">
                         <button class="btn btn-primary" onclick="myFav()">❤️ 我的红心歌单</button>
-                                                                    </div>
+                        <button class="btn btn-primary" onclick="myPlaylists()">📋 我的所有歌单</button>
+                    </div>
                     <div id="result"></div>
                 `
             }
         };
 
         // ==================== 操作 ====================
+        // ==================== 通用 helper ====================
+        async function loadCandidates(type, q, limit = 10) {
+            """按名称搜索, 返回候选列表"""
+            return await api('/candidates', {q, type, limit});
+        }
+
+        function renderCandidates(items, onSelect) {
+            """渲染候选列表 (重名筛选用)"""
+            if (!items || items.length === 0) return '<p style="color: #999;">无结果</p>';
+            return items.map((c, i) => {
+                const dur = c.duration ? ` · ${Math.floor(c.duration/60000)}:${String(Math.floor((c.duration%60000)/1000)).padStart(2, '0')}` : '';
+                const extra = c.extra ? ` · ${escapeHtml(c.extra)}` : '';
+                const commentCount = c.comment_total !== undefined ? ` · 💬${c.comment_total.toLocaleString()}` : '';
+                return `
+                    <div class="song-card" onclick="(${onSelect})(${c.id})">
+                        <div class="num">${i+1}</div>
+                        <div class="info">
+                            <div class="name">${escapeHtml(c.name)}</div>
+                            <div class="meta">${escapeHtml(c.subtitle || '')}${extra}${dur}${commentCount}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
         async function doSearch() {
-            const kw = document.getElementById('kw').value;
-            const type = document.getElementById('type').value;
-            const limit = document.getElementById('limit').value;
+            const kw = document.getElementById('searchKw').value;
             const r = document.getElementById('result');
+            if (!kw) { toast('请输入关键词', 'error'); return; }
             r.innerHTML = '<p style="color: #999;">⏳ 搜索中...</p>';
             try {
-                const data = await api('/search', {q: kw, type, limit});
-                if (data.items.length === 0) {
-                    r.innerHTML = '<p style="color: #999;">无结果</p>';
+                const data = await loadCandidates('song', kw, 15);
+                if (data.candidates.length === 0) {
+                    r.innerHTML = '<p style="color: #999;">无结果, 试试别的关键词</p>';
                     return;
                 }
-                if (type === 'song') {
-                    r.innerHTML = data.items.map((s, i) => `
-                        <div class="song-card" onclick="fillSongId(${s.id})">
+                // 点击 → 歌曲详情页 (内联展示)
+                r.innerHTML = `
+                    <p style="color: #28a745; margin-bottom: 12px;">找到 <strong>${data.count}</strong> 首歌曲, 点击查看详情 + 评论</p>
+                    <div id="songGrid">${renderCandidates(data.candidates, 'showSongWithComments')}</div>
+                    <div id="songDetail" style="margin-top: 20px;"></div>
+                `;
+            } catch (e) { toast('搜索失败', 'error'); r.innerHTML = ''; }
+        }
+
+        async function showSongWithComments(song_id) {
+            const el = document.getElementById('songDetail');
+            el.innerHTML = '<p style="color: #999;">⏳ 加载歌曲详情 + 评论...</p>';
+            try {
+                const [song, comment] = await Promise.all([
+                    api('/song/' + song_id),
+                    api('/comment/' + song_id + '?limit=5'),
+                ]);
+                const artists = (song.artists || []).map(a => escapeHtml(typeof a === 'string' ? a : a.name || '')).join(' / ');
+                const hot = (comment.hot_comments || []).slice(0, 5);
+                el.innerHTML = `
+                    <div class="song-detail-card">
+                        <h3>🎵 ${escapeHtml(song.name)} <span style="color: #666; font-size: 13px;">[ID: ${song_id}]</span></h3>
+                        <p><strong>歌手:</strong> ${artists || '-'}<br>
+                        <strong>专辑:</strong> ${escapeHtml(song.album || '-')}<br>
+                        <strong>时长:</strong> ${Math.floor((song.duration||0)/60000)}:${String(Math.floor(((song.duration||0)%60000)/1000)).padStart(2,'0')}<br>
+                        ${song.pic_url ? `<img src="${song.pic_url}" style="max-width: 200px; margin-top: 8px; border-radius: 6px;" />` : ''}</p>
+                        <h4 style="margin-top: 16px;">💬 热门评论 <span style="color: #666; font-size: 12px;">(共 ${comment.total || 0} 条)</span></h4>
+                        ${hot.length === 0 ? '<p style="color: #999;">暂无热评</p>' : hot.map((c, i) => `
+                            <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; margin: 8px 0;">
+                                <div style="font-size: 12px; color: #666;">${i+1}. ${escapeHtml(c.user?.nickname || '匿名')} <span style="color: #999;">👍 ${c.liked_count || 0}</span></div>
+                                <div style="margin-top: 4px;">${escapeHtml(c.content || '').substring(0, 200)}</div>
+                            </div>
+                        `).join('')}
+                        <p style="margin-top: 12px;"><a href="javascript:void(0)" onclick="showPage('comment');document.getElementById('commentName').value='${escapeHtml(song.name).replace(/'/g,"\'")}'">→ 查看更多评论</a></p>
+                    </div>
+                `;
+                el.scrollIntoView({behavior: 'smooth'});
+            } catch (e) { toast('加载详情失败', 'error'); el.innerHTML = ''; }
+        }
+
+        async function lyricSearch() {
+            const kw = document.getElementById('lyricName').value;
+            const r = document.getElementById('result');
+            if (!kw) { toast('请输入歌曲名', 'error'); return; }
+            r.innerHTML = '<p style="color: #999;">⏳ 搜索歌曲...</p>';
+            try {
+                const data = await loadCandidates('song', kw, 8);
+                if (data.candidates.length === 0) { r.innerHTML = '<p style="color: #999;">无结果</p>'; return; }
+                r.innerHTML = `
+                    <p style="color: #28a745; margin-bottom: 12px;">找到 <strong>${data.count}</strong> 首同名歌曲, 选一首看歌词</p>
+                    ${renderCandidates(data.candidates, 'loadLyricById')}
+                `;
+            } catch (e) { toast('搜索失败', 'error'); r.innerHTML = ''; }
+        }
+
+        async function loadLyricById(song_id) {
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 加载歌词...</p>';
+            try {
+                const data = await api('/lyric/' + song_id);
+                r.innerHTML = `
+                    <h3>📝 ${escapeHtml(data.song_id ? '歌词 [ID:' + data.song_id + ']' : '')}</h3>
+                    <pre style="background: #f8f9fa; padding: 16px; border-radius: 6px; white-space: pre-wrap; font-family: monospace; line-height: 1.8;">${escapeHtml(data.lyric || '暂无歌词')}</pre>
+                    ${data.tlyric ? `<h4 style="margin-top: 16px;">🌐 翻译</h4><pre style="background: #f0f3ff; padding: 16px; border-radius: 6px; white-space: pre-wrap; font-family: monospace; line-height: 1.8;">${escapeHtml(data.tlyric)}</pre>` : ''}
+                `;
+            } catch (e) { toast('加载歌词失败', 'error'); r.innerHTML = ''; }
+        }
+
+        async function commentSearch() {
+            const kw = document.getElementById('commentName').value;
+            const r = document.getElementById('result');
+            if (!kw) { toast('请输入歌曲名', 'error'); return; }
+            r.innerHTML = '<p style="color: #999;">⏳ 搜索歌曲 + 评论数...</p>';
+            try {
+                const data = await api('/comment/by-name', {q: kw, limit: 8});
+                if (data.candidates.length === 0) { r.innerHTML = '<p style="color: #999;">无结果</p>'; return; }
+                r.innerHTML = `
+                    <p style="color: #28a745; margin-bottom: 12px;">找到 <strong>${data.count}</strong> 首同名歌曲 (按评论数排序前 8), 选一首看评论</p>
+                    ${renderCandidates(data.candidates, 'loadCommentById')}
+                `;
+            } catch (e) { toast('搜索失败', 'error'); r.innerHTML = ''; }
+        }
+
+        async function loadCommentById(song_id) {
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 加载评论...</p>';
+            try {
+                const data = await api('/comment/' + song_id + '?limit=20');
+                const all = [...(data.hot_comments || []), ...(data.comments || [])];
+                r.innerHTML = `
+                    <h3>💬 评论 [ID:${song_id}] <span style="color: #666; font-size: 13px;">共 ${data.total || 0} 条</span></h3>
+                    ${all.length === 0 ? '<p style="color: #999;">暂无评论</p>' : all.map((c, i) => `
+                        <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; margin: 8px 0;">
+                            <div style="font-size: 12px; color: #666;">${i+1}. ${escapeHtml(c.user?.nickname || '匿名')} <span style="color: #999;">👍 ${c.liked_count || 0}</span></div>
+                            <div style="margin-top: 4px;">${escapeHtml(c.content || '')}</div>
+                        </div>
+                    `).join('')}
+                `;
+            } catch (e) { toast('加载评论失败', 'error'); r.innerHTML = ''; }
+        }
+
+        async function songSearch() {
+            const kw = document.getElementById('songName').value;
+            const r = document.getElementById('result');
+            if (!kw) { toast('请输入歌曲名', 'error'); return; }
+            r.innerHTML = '<p style="color: #999;">⏳ 搜索歌曲...</p>';
+            try {
+                const data = await loadCandidates('song', kw, 8);
+                if (data.candidates.length === 0) { r.innerHTML = '<p style="color: #999;">无结果</p>'; return; }
+                r.innerHTML = `
+                    <p style="color: #28a745; margin-bottom: 12px;">找到 <strong>${data.count}</strong> 首歌曲, 选一首看详情</p>
+                    ${renderCandidates(data.candidates, 'loadSongDetailById')}
+                `;
+            } catch (e) { toast('搜索失败', 'error'); r.innerHTML = ''; }
+        }
+
+        async function loadSongDetailById(song_id) {
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 加载详情...</p>';
+            try {
+                const data = await api('/song/' + song_id);
+                const artists = (data.artists || []).map(a => escapeHtml(typeof a === 'string' ? a : a.name || '')).join(' / ');
+                r.innerHTML = `
+                    <div class="song-detail-card">
+                        <h3>🎵 ${escapeHtml(data.name)}</h3>
+                        <p><strong>ID:</strong> ${data.id}<br>
+                        <strong>歌手:</strong> ${artists || '-'}<br>
+                        <strong>专辑:</strong> ${escapeHtml(data.album || '-')}<br>
+                        <strong>时长:</strong> ${Math.floor((data.duration||0)/60000)}:${String(Math.floor(((data.duration||0)%60000)/1000)).padStart(2,'0')}</p>
+                        ${data.pic_url ? `<img src="${data.pic_url}" style="max-width: 300px; margin-top: 12px; border-radius: 6px;" />` : ''}
+                        <p style="margin-top: 12px;">
+                            <a href="javascript:void(0)" onclick="showPage('lyric');document.getElementById('lyricName').value='${escapeHtml(data.name).replace(/'/g,"\'")}'">📝 看歌词</a>
+                            ·
+                            <a href="javascript:void(0)" onclick="showPage('comment');document.getElementById('commentName').value='${escapeHtml(data.name).replace(/'/g,"\'")}'">💬 看评论</a>
+                        </p>
+                    </div>
+                `;
+            } catch (e) { toast('加载失败', 'error'); r.innerHTML = ''; }
+        }
+
+        async function playlistSearch() {
+            const kw = document.getElementById('playlistName').value;
+            const r = document.getElementById('result');
+            if (!kw) { toast('请输入歌单名', 'error'); return; }
+            r.innerHTML = '<p style="color: #999;">⏳ 搜索歌单...</p>';
+            try {
+                const data = await loadCandidates('playlist', kw, 8);
+                if (data.candidates.length === 0) { r.innerHTML = '<p style="color: #999;">无结果</p>'; return; }
+                r.innerHTML = `
+                    <p style="color: #28a745; margin-bottom: 12px;">找到 <strong>${data.count}</strong> 个歌单, 选一个看内容</p>
+                    ${renderCandidates(data.candidates, 'loadPlaylistById')}
+                `;
+            } catch (e) { toast('搜索失败', 'error'); r.innerHTML = ''; }
+        }
+
+        async function loadPlaylistById(playlist_id) {
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 加载歌单...</p>';
+            try {
+                const data = await api('/playlist/' + playlist_id);
+                const pl = data.playlist || data;
+                const tracks = pl.tracks || [];
+                r.innerHTML = `
+                    <h3>📋 ${escapeHtml(pl.name || '')}</h3>
+                    <p><strong>创建者:</strong> ${escapeHtml(pl.creator?.nickname || '-')} · <strong>歌曲数:</strong> ${pl.track_count || tracks.length}<br>
+                    ${pl.cover_url ? `<img src="${pl.cover_url}" style="max-width: 200px; margin-top: 8px; border-radius: 6px;" />` : ''}</p>
+                    <h4 style="margin-top: 16px;">🎵 歌曲列表 (前 20)</h4>
+                    ${tracks.length === 0 ? '<p style="color: #999;">暂无歌曲</p>' : tracks.slice(0, 20).map((t, i) => `
+                        <div class="song-card" onclick="showSongWithComments(${t.id})">
+                            <div class="num">${i+1}</div>
+                            <div class="info">
+                                <div class="name">${escapeHtml(t.name)}</div>
+                                <div class="meta">${(t.ar || t.artists || []).map(a => escapeHtml(typeof a === 'string' ? a : a.name || '')).join(' / ')}</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                `;
+            } catch (e) { toast('加载失败', 'error'); r.innerHTML = ''; }
+        }
+
+        async function artistSearch() {
+            const kw = document.getElementById('artistName').value;
+            const r = document.getElementById('result');
+            if (!kw) { toast('请输入歌手名', 'error'); return; }
+            r.innerHTML = '<p style="color: #999;">⏳ 搜索歌手...</p>';
+            try {
+                const data = await loadCandidates('artist', kw, 8);
+                if (data.candidates.length === 0) { r.innerHTML = '<p style="color: #999;">无结果, 试试别的歌手</p>'; return; }
+                r.innerHTML = `
+                    <p style="color: #28a745; margin-bottom: 12px;">找到 <strong>${data.count}</strong> 位歌手, 选一位看资料</p>
+                    ${renderCandidates(data.candidates, 'loadArtistById')}
+                `;
+            } catch (e) { toast('搜索失败', 'error'); r.innerHTML = ''; }
+        }
+
+        async function loadArtistById(artist_id) {
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 加载歌手...</p>';
+            try {
+                const data = await api('/artist/' + artist_id);
+                r.innerHTML = `
+                    <div class="song-detail-card">
+                        <h3>👤 ${escapeHtml(data.name)}</h3>
+                        <p><strong>ID:</strong> ${data.id}<br>
+                        ${data.alias && data.alias.length ? `<strong>别名:</strong> ${data.alias.map(escapeHtml).join(' / ')}<br>` : ''}
+                        <strong>专辑数:</strong> ${data.album_count || 0}<br>
+                        <strong>MV 数:</strong> ${data.mv_count || 0}<br>
+                        ${data.brief_desc ? `<strong>简介:</strong> ${escapeHtml(data.brief_desc).substring(0, 300)}...<br>` : ''}
+                        ${data.pic_url ? `<img src="${data.pic_url}" style="max-width: 300px; margin-top: 12px; border-radius: 6px;" />` : ''}</p>
+                    </div>
+                `;
+            } catch (e) { toast('加载失败', 'error'); r.innerHTML = ''; }
+        }
+
+        async function albumSearch() {
+            const kw = document.getElementById('albumName').value;
+            const r = document.getElementById('result');
+            if (!kw) { toast('请输入专辑名', 'error'); return; }
+            r.innerHTML = '<p style="color: #999;">⏳ 搜索专辑...</p>';
+            try {
+                const data = await loadCandidates('album', kw, 8);
+                if (data.candidates.length === 0) { r.innerHTML = '<p style="color: #999;">无结果</p>'; return; }
+                r.innerHTML = `
+                    <p style="color: #28a745; margin-bottom: 12px;">找到 <strong>${data.count}</strong> 张专辑, 选一张看曲目</p>
+                    ${renderCandidates(data.candidates, 'loadAlbumById')}
+                `;
+            } catch (e) { toast('搜索失败', 'error'); r.innerHTML = ''; }
+        }
+
+        async function loadAlbumById(album_id) {
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 加载专辑...</p>';
+            try {
+                const data = await api('/album/' + album_id);
+                const songs = data.songs || [];
+                r.innerHTML = `
+                    <h3>💿 ${escapeHtml(data.name || '')}</h3>
+                    <p><strong>歌手:</strong> ${(data.artists || []).map(a => escapeHtml(typeof a === 'string' ? a : a.name || '')).join(' / ')}<br>
+                    <strong>歌曲数:</strong> ${songs.length}<br>
+                    ${data.publish_time_str ? `<strong>发行时间:</strong> ${escapeHtml(data.publish_time_str)}<br>` : ''}
+                    ${data.cover_url ? `<img src="${data.cover_url}" style="max-width: 200px; margin-top: 8px; border-radius: 6px;" />` : ''}</p>
+                    <h4 style="margin-top: 16px;">🎵 曲目</h4>
+                    ${songs.length === 0 ? '<p style="color: #999;">暂无曲目</p>' : songs.map((s, i) => `
+                        <div class="song-card" onclick="showSongWithComments(${s.id})">
                             <div class="num">${i+1}</div>
                             <div class="info">
                                 <div class="name">${escapeHtml(s.name)}</div>
-                                <div class="meta">${s.artists.map(escapeHtml).join(' / ')} · ${escapeHtml(s.album)}</div>
+                                <div class="meta">${(s.ar || s.artists || []).map(a => escapeHtml(typeof a === 'string' ? a : a.name || '')).join(' / ')}</div>
                             </div>
                         </div>
-                    `).join('');
-                } else if (type === 'artist') {
-                    r.innerHTML = data.items.map(a => `
-                        <div class="song-card" onclick="document.getElementById('artistId').value=${a.id};showPage('artist')">
-                            <div class="info"><div class="name">${escapeHtml(a.name)}</div><div class="meta">${escapeHtml((a.alias || []).join(' / '))}</div></div>
-                        </div>
-                    `).join('');
-                } else {
-                    r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data.items, null, 2))}</pre>`;
-                }
-            } catch (e) { toast('搜索失败: ' + e.message, 'error'); r.innerHTML = ''; }
-        }
-
-        function fillSongId(id) {
-            document.getElementById('songId').value = id;
-            showPage('lyric');
-        }
-
-        async function doLyric() {
-            const songId = document.getElementById('songId').value;
-            const r = document.getElementById('result');
-            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
-            try {
-                const data = await api('/lyric/' + songId);
-                r.innerHTML = `
-                    <p style="margin-bottom: 8px; color: #666;">歌曲 ID: ${songId} · <a href="/api/v1/lyric/${songId}" target="_blank">JSON</a></p>
-                    <div class="lyric-box">${escapeHtml(data.lyric || data.tlyric || '(无歌词)')}</div>
+                    `).join('')}
                 `;
-            } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
+            } catch (e) { toast('加载失败', 'error'); r.innerHTML = ''; }
         }
 
-        async function doComment() {
-            const songId = document.getElementById('songId').value;
-            const limit = document.getElementById('limit').value;
-            const offset = document.getElementById('offset').value;
-            const r = document.getElementById('result');
-            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
-            try {
-                const data = await api('/comment/' + songId, {limit, offset});
-                let html = `<p style="margin-bottom: 12px; color: #666;">📊 总数: <strong>${data.total}</strong> · 热门 ${data.hot_comments.length} · 普通 ${data.comments.length}</p>`;
-                if (data.hot_comments.length > 0) {
-                    html += '<h3 style="margin: 16px 0 8px; color: #c20c0c;">🔥 热门评论</h3>';
-                    html += data.hot_comments.map(c => `
-                        <div class="comment-item">
-                            <div class="author">${escapeHtml(c.user)}</div>
-                            <div class="content">${escapeHtml(c.content)}</div>
-                            <div class="likes">👍 ${c.liked_count}</div>
-                        </div>
-                    `).join('');
-                }
-                if (data.comments.length > 0) {
-                    html += '<h3 style="margin: 16px 0 8px; color: #666;">💬 最新评论</h3>';
-                    html += data.comments.slice(0, 50).map(c => `
-                        <div class="comment-item">
-                            <div class="author">${escapeHtml(c.user)}</div>
-                            <div class="content">${escapeHtml(c.content)}</div>
-                            <div class="likes">👍 ${c.liked_count}</div>
-                        </div>
-                    `).join('');
-                }
-                r.innerHTML = html;
-            } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
-        }
-
-        async function doSong() {
-            const songId = document.getElementById('songId').value;
-            const r = document.getElementById('result');
-            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
-            try {
-                const data = await api('/song/' + songId);
-                r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
-            } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
-        }
-
-        async function doPlaylist() {
-            const id = document.getElementById('playlistId').value;
-            const r = document.getElementById('result');
-            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
-            try {
-                const data = await api('/playlist/' + id);
-                let html = `<h3>${escapeHtml(data.name)}</h3>`;
-                html += `<p style="color: #666; font-size: 13px; margin: 8px 0;">${escapeHtml(data.creator)} · ${data.track_count} 首 · 播放 ${data.play_count.toLocaleString()}</p>`;
-                if (data.description) html += `<p style="font-size: 13px; color: #555; margin: 8px 0;">${escapeHtml(data.description)}</p>`;
-                html += data.tracks.map((t, i) => `
-                    <div class="song-card" onclick="fillSongId(${t.id})">
-                        <div class="num">${i+1}</div>
-                        <div class="info">
-                            <div class="name">${escapeHtml(t.name)}</div>
-                            <div class="meta">${t.artists.map(escapeHtml).join(' / ')}</div>
-                        </div>
-                    </div>
-                `).join('');
-                r.innerHTML = html;
-            } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
-        }
-
-        async function doArtist() {
-            const id = document.getElementById('artistId').value;
-            const r = document.getElementById('result');
-            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
-            try {
-                const data = await api('/artist/' + id);
-                r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
-            } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
-        }
-
-        async function doAlbum() {
-            const id = document.getElementById('albumId').value;
-            const r = document.getElementById('result');
-            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
-            try {
-                const data = await api('/album/' + id);
-                let html = `<h3>${escapeHtml(data.name)}</h3>`;
-                html += `<p style="color: #666; font-size: 13px; margin: 8px 0;">${data.artists.map(a => escapeHtml(a.name)).join(' / ')} · ${data.track_count} 首</p>`;
-                html += data.tracks.map((t, i) => `
-                    <div class="song-card" onclick="fillSongId(${t.id})">
-                        <div class="num">${i+1}</div>
-                        <div class="info">
-                            <div class="name">${escapeHtml(t.name)}</div>
-                            <div class="meta">${t.artists.map(escapeHtml).join(' / ')}</div>
-                        </div>
-                    </div>
-                `).join('');
-                r.innerHTML = html;
-            } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
-        }
-
-        async function doRadio() {
+        async function radioLoad() {
             const id = document.getElementById('radioId').value;
-            const limit = document.getElementById('limit').value;
             const r = document.getElementById('result');
-            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
+            if (!id) { toast('请输入电台 ID', 'error'); return; }
+            r.innerHTML = '<p style="color: #999;">⏳ 加载电台...</p>';
             try {
-                const data = await api('/radio/' + id, {limit});
-                r.innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
-            } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
+                const data = await api('/radio/' + id + '?limit=20');
+                const programs = data.programs || [];
+                r.innerHTML = `
+                    <h3>📻 电台 [ID:${id}] <span style="color: #666; font-size: 13px;">共 ${data.count || 0} 个节目</span></h3>
+                    ${programs.length === 0 ? '<p style="color: #999;">暂无节目, 网易云电台 pyncm 1.8.1 支持有限, 可尝试其他 ID</p>' : programs.map((p, i) => `
+                        <div class="song-card">
+                            <div class="num">${i+1}</div>
+                            <div class="info">
+                                <div class="name">${escapeHtml(p.name || '')}</div>
+                                <div class="meta">${escapeHtml(p.dj?.nickname || '')}</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                `;
+            } catch (e) { toast('加载失败', 'error'); r.innerHTML = ''; }
         }
 
-        async function doToplist() {
-            const name = document.getElementById('name').value;
-            const limit = document.getElementById('limit').value;
+        async function loadToplists() {
             const r = document.getElementById('result');
-            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
+            r.innerHTML = '<p style="color: #999;">⏳ 加载榜单列表...</p>';
             try {
-                const data = await api('/toplist/' + name, {limit});
-                let html = `<h3>${escapeHtml(data.name)}</h3>`;
-                html += `<p style="color: #666; font-size: 13px; margin: 8px 0;">更新时间: ${new Date(data.update_time).toLocaleString()}</p>`;
-                html += data.tracks.map((t, i) => `
-                    <div class="song-card" onclick="fillSongId(${t.id})">
-                        <div class="num">${i+1}</div>
-                        <div class="info">
-                            <div class="name">${escapeHtml(t.name)}</div>
-                            <div class="meta">${t.artists.map(escapeHtml).join(' / ')}</div>
-                        </div>
-                    </div>
-                `).join('');
-                r.innerHTML = html;
-            } catch (e) { toast('查询失败: ' + e.message, 'error'); r.innerHTML = ''; }
+                const data = await api('/toplist');
+                const names = Object.keys(data.toplists || {});
+                r.innerHTML = `
+                    <p style="color: #28a745; margin-bottom: 12px;">共 <strong>${names.length}</strong> 个榜单</p>
+                    ${names.map(n => `
+                        <button class="btn btn-primary" style="margin: 4px;" onclick="loadToplist('${n}')">${escapeHtml(n)}</button>
+                    `).join('')}
+                    <div id="toplistDetail" style="margin-top: 20px;"></div>
+                `;
+            } catch (e) { toast('加载失败', 'error'); r.innerHTML = ''; }
         }
+
+        async function loadToplist(name) {
+            const el = document.getElementById('toplistDetail');
+            el.innerHTML = '<p style="color: #999;">⏳ 加载榜单...</p>';
+            try {
+                const data = await api('/toplist/' + name + '?limit=30');
+                const tracks = data.tracks || [];
+                el.innerHTML = `
+                    <h3>🏆 ${escapeHtml(name)} <span style="color: #666; font-size: 13px;">前 ${tracks.length} 首</span></h3>
+                    ${tracks.map((t, i) => `
+                        <div class="song-card" onclick="showSongWithComments(${t.id})">
+                            <div class="num">${i+1}</div>
+                            <div class="info">
+                                <div class="name">${escapeHtml(t.name)}</div>
+                                <div class="meta">${(t.artists || []).map(a => escapeHtml(typeof a === 'string' ? a : a.name || '')).join(' / ')}</div>
+                            </div>
+                        </div>
+                    `).join('')}
+                `;
+            } catch (e) { toast('加载榜单失败', 'error'); el.innerHTML = ''; }
+        }
+
 
         let qrCheckTimer = null;
         let currentUnikey = null;
@@ -944,6 +1103,32 @@
                 `).join('');
                 r.innerHTML = html;
             } catch (e) { toast('查询失败: ' + e.message + ' (需要登录)', 'error'); r.innerHTML = ''; }
+        }
+
+
+
+        async function myPlaylists() {
+            const r = document.getElementById('result');
+            r.innerHTML = '<p style="color: #999;">⏳ 查询中...</p>';
+            try {
+                const data = await api('/my/playlists', {limit: 30});
+                const playlists = data.playlists || [];
+                let html = `<h3>📋 我的所有歌单 <span style="color: #666; font-size: 13px;">共 ${playlists.length} 个</span></h3>`;
+                if (playlists.length === 0) {
+                    html += '<p style="color: #999;">暂无歌单</p>';
+                } else {
+                    html += playlists.map((p, i) => `
+                        <div class="song-card" onclick="loadPlaylistById(${p.id})">
+                            <div class="num">${i+1}</div>
+                            <div class="info">
+                                <div class="name">${escapeHtml(p.name)}</div>
+                                <div class="meta">${p.track_count || 0} 首 · ID: ${p.id}</div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+                r.innerHTML = html;
+            } catch (e) { toast('查询失败 (需要登录)', 'error'); r.innerHTML = ''; }
         }
 
 
