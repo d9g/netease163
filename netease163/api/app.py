@@ -566,7 +566,7 @@ def api_login_cookie(music_u: str = Query(..., description="MUSIC_U cookie 值")
     return login_via_cookie(music_u=music_u)
 
 
-# ==================== 关键词管理 (9/4 老杨要求) ====================
+# ==================== 关键词管理 ()  ====================
 BUILTIN_SENSITIVE_WORDS = {
     "政治", "领导人", "国家领导人", "反动", "颠覆", "分裂国家",
     "色情", "裸聊", "约炮", "一夜情", "援交", "卖淫", "嫖娼",
@@ -677,7 +677,7 @@ def api_trigger_comment_crawl(song_id: int, max_count: int = Query(100, ge=10, l
     }
 
 
-# ==================== 首页排行 (9/4 老杨要求) ====================
+# ==================== 首页排行 ()  ====================
 @app.get("/api/v1/rankings/hot-songs", tags=["排行"])
 def api_hot_songs(
     period: str = Query("week", description="all/week/month"),
@@ -858,7 +858,7 @@ def api_run_hot_stats():
         session.close()
 
 
-# ==================== AI 评论质量分析 (9/4 老杨要求) ====================
+# ==================== AI 评论质量分析 ()  ====================
 @app.post("/api/v1/admin/comments/analyze", tags=["AI"])
 def api_analyze_comments(
     limit: int = Query(100, ge=1, le=500),

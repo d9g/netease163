@@ -84,7 +84,7 @@ class Comment(Base):
     comment_time = Column(Integer, default=0)  # timestamp ms
     is_hot = Column(Integer, default=0)  # 0=普通 1=热门
     crawled_at = Column(DateTime, default=now_cst)
-    # AI 评分 (9/4 老杨要求)
+    # AI 评分 () 
     ai_score = Column(Integer, default=-1)  # 0-5 星 (-1=未评分)
     ai_label = Column(String(20))  # "口水" / "中等" / "高质量"
     ai_reason = Column(String(500))  # AI 给出理由 (20字内)
@@ -131,7 +131,7 @@ class CrawlLog(Base):
     crawled_at = Column(DateTime, default=now_cst, index=True)
 
 
-# ==================== 跟时间做朋友 (9/4 老杨要求) ====================
+# ==================== 跟时间做朋友 ()  ====================
 class SongCrawlStatus(Base):
     """歌曲爬取状态 - 跟时间做朋友核心表"""
     __tablename__ = "song_crawl_status"

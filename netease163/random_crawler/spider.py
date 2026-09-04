@@ -41,7 +41,7 @@ ROUND_TOPLIST_SONGS = 6  # 每轮从榜单取 6 首
 ROUND_KEYWORD_SONGS = 4  # 每轮从关键词取 4 首
 ROUND_TARGET = ROUND_TOPLIST_SONGS + ROUND_KEYWORD_SONGS  # 10 首/轮
 
-# 跟时间做朋友分配 (9/4 老杨要求)
+# 跟时间做朋友分配 () 
 # 每天 100 首: 50% 重爬(7天前) + 30% 新歌 + 20% 评论增量
 # 每轮 10 首: 5 重爬 + 3 新歌 + 2 评论
 RE_WEIGHT = 0.50  # 50% 重新更新
@@ -333,7 +333,7 @@ class RandomCrawler:
         return 0
 
     def run_one_round(self) -> Dict[str, int]:
-        """跑一轮: 跟时间做朋友 (9/4 老杨要求)
+        """跑一轮: 跟时间做朋友 () 
         5 首重爬(7天前) + 3 首新歌(榜单/关键词) + 2 首评论增量 = 10 首
         """
         self._reset_if_new_day()
