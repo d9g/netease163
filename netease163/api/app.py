@@ -750,7 +750,7 @@ def api_hot_comments(limit: int = Query(20, ge=1, le=100)):
                     "song_id": r[0].song_id,
                     "song_name": r[1],
                     "user_nickname": r[0].user_nickname,
-                    "content": r[0].content[:200] if r[0].content else "",
+                    "content": r[0].content if r[0].content else "",
                     "liked_count": r[0].liked_count or 0,
                 }
                 for i, r in enumerate(rows)
@@ -899,6 +899,16 @@ def api_high_quality_comments(
             .limit(limit)
         )
         rows = session.execute(stmt).all()
+        # 去重: 按 content 相同只保留第一条
+        seen_content = set()
+        unique_rows = []
+        for r in rows:
+            key = (r[0].content or "")[:100]  # 用前 100 字去重
+            if key in seen_content:
+                continue
+            seen_content.add(key)
+            unique_rows.append(r)
+        rows = unique_rows
         return {
             "min_score": min_score,
             "count": len(rows),
@@ -909,7 +919,7 @@ def api_high_quality_comments(
                     "song_id": r[0].song_id,
                     "song_name": r[1],
                     "user_nickname": r[0].user_nickname,
-                    "content": r[0].content[:200] if r[0].content else "",
+                    "content": r[0].content if r[0].content else "",
                     "liked_count": r[0].liked_count or 0,
                     "ai_score": r[0].ai_score,
                     "ai_label": r[0].ai_label,

@@ -643,6 +643,9 @@
                         <div class="info">
                             <div class="name">${escapeHtml(c.name)}</div>
                             <div class="meta">${escapeHtml(c.subtitle || '')}${extra}${dur}${commentCount}</div>
+                            <div class="links" style="margin-top:6px;font-size:12px;">
+                                <a href="https://music.163.com/song?id=${c.id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
+                            </div>
                         </div>
                     </div>
                 `;
@@ -1090,13 +1093,19 @@
                 return;
             }
             r.innerHTML = `
-                <p style="color:#666;font-size:12px;margin-bottom:12px;">📊 按评论数 +点赞数综合排序 · 共 ${data.count} 首</p>
+                <p style="color:#666;font-size:12px;margin-bottom:12px;">📊 按评论数 + 点赞数综合排序 · 共 ${data.count} 首</p>
                 ${data.songs.map((s, i) => `
-                    <div class="song-card" onclick="loadSongDetail(${s.id})" style="cursor:pointer;">
+                    <div class="song-card">
                         <div class="num" style="background:${i<3?'#c20c0c':'#999'};">${i+1}</div>
                         <div class="info">
-                            <div class="name">${escapeHtml(s.name)}</div>
+                            <div class="name">
+                                <a href="javascript:void(0)" onclick="loadSongDetailById(${s.id})" style="color:#333;text-decoration:none;">${escapeHtml(s.name)}</a>
+                            </div>
                             <div class="meta">🎤 ${escapeHtml((s.artists || []).join(', '))} · 💬 ${s.comment_total || 0} 评论 · ❤️ ${(s.liked_total || 0).toLocaleString()} 赞</div>
+                            <div class="links" style="margin-top:6px;font-size:12px;">
+                                <a href="javascript:void(0)" onclick="loadCommentById(${s.id})" '${escapeHtml(s.name).replace(/'/g, "\\\\'")}')" style="color:#c20c0c;margin-right:12px;">💬 查看评论</a>
+                                <a href="https://music.163.com/song?id=${s.id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
+                            </div>
                         </div>
                     </div>
                 `).join('')}
@@ -1111,13 +1120,22 @@
                 return;
             }
             r.innerHTML = `
-                <p style="color:#666;font-size:12px;margin-bottom:12px;">💎 按点赞数排序 · 共 ${data.count} 条</p>
+                <p style="color:#666;font-size:12px;margin-bottom:12px;">💎 按点赞数排序 · 共 ${data.count} 条 (点击展开全文)</p>
                 ${data.comments.map((c, i) => `
-                    <div class="song-card" style="cursor:default;">
-                        <div class="num" style="background:${i<3?'#c20c0c':'#999'};">${i+1}</div>
-                        <div class="info">
-                            <div class="name" style="font-size:14px;">${escapeHtml((c.content || '').slice(0, 80))}${(c.content || '').length > 80 ? '...' : ''}</div>
-                            <div class="meta">🎵 ${escapeHtml(c.song_name || '')} · 👤 ${escapeHtml(c.user_nickname || '')} · ❤️ ${(c.liked_count || 0).toLocaleString()} 赞</div>
+                    <div class="song-card" style="flex-direction:column;align-items:stretch;padding:16px;">
+                        <div style="display:flex;align-items:flex-start;">
+                            <div class="num" style="background:${i<3?'#c20c0c':'#999'};flex-shrink:0;">${i+1}</div>
+                            <div style="flex:1;min-width:0;">
+                                <div class="content-full" style="font-size:14px;line-height:1.6;color:#333;white-space:pre-wrap;word-break:break-word;">${escapeHtml(c.content || '')}</div>
+                                <div class="meta" style="margin-top:8px;">
+                                    👤 ${escapeHtml(c.user_nickname || '')} · ❤️ ${(c.liked_count || 0).toLocaleString()} 赞
+                                </div>
+                                <div class="links" style="margin-top:6px;font-size:12px;">
+                                    🎵 <a href="javascript:void(0)" onclick="loadSongDetailById(${c.song_id})" style="color:#333;text-decoration:none;">${escapeHtml(c.song_name || '')}</a>
+                                    · <a href="javascript:void(0)" onclick="loadCommentById(${c.song_id})" '${escapeHtml(c.song_name || '').replace(/'/g, "\\\\'")}')" style="color:#c20c0c;margin-right:12px;">💬 查看全部</a>
+                                    · <a href="https://music.163.com/song?id=${c.song_id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 `).join('')}
@@ -1137,8 +1155,14 @@
                     <div class="song-card">
                         <div class="num" style="background:${i<3?'#c20c0c':'#999'};">${i+1}</div>
                         <div class="info">
-                            <div class="name">${escapeHtml(s.name)}</div>
+                            <div class="name">
+                                <a href="javascript:void(0)" onclick="loadSongDetailById(${s.id})" style="color:#333;text-decoration:none;">${escapeHtml(s.name)}</a>
+                            </div>
                             <div class="meta">🎤 ${escapeHtml((s.artists || []).join(', '))} · 📈 +${s.hot_increase || 0} 热度</div>
+                            <div class="links" style="margin-top:6px;font-size:12px;">
+                                <a href="javascript:void(0)" onclick="loadCommentById(${s.id})" '${escapeHtml(s.name).replace(/'/g, "\\\\'")}')" style="color:#c20c0c;margin-right:12px;">💬 查看评论</a>
+                                <a href="https://music.163.com/song?id=${s.id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
+                            </div>
                         </div>
                     </div>
                 `).join('')}
@@ -1153,13 +1177,25 @@
                 return;
             }
             r.innerHTML = `
-                <p style="color:#666;font-size:12px;margin-bottom:12px;">⭐ LLM AI 评分 ≥ 4 星 · 共 ${data.count} 条</p>
+                <p style="color:#666;font-size:12px;margin-bottom:12px;">⭐ LLM AI 评分 ≥ 4 星 · 共 ${data.count} 条 (已去重 · 点击展开)</p>
                 ${data.comments.map((c, i) => `
-                    <div class="song-card" style="cursor:default;">
-                        <div class="num" style="background:#9b59b6;font-size:18px;">${'⭐'.repeat(c.ai_score || 0)}</div>
-                        <div class="info">
-                            <div class="name" style="font-size:14px;">${escapeHtml((c.content || '').slice(0, 100))}${(c.content || '').length > 100 ? '...' : ''}</div>
-                            <div class="meta">🎵 ${escapeHtml(c.song_name || '')} · ${escapeHtml(c.ai_label || '')} · AI: ${escapeHtml(c.ai_reason || '')}</div>
+                    <div class="song-card quality-card" style="flex-direction:column;align-items:stretch;padding:18px;border-left:4px solid #9b59b6;">
+                        <div style="display:flex;align-items:flex-start;">
+                            <div class="num" style="background:#9b59b6;color:#fff;flex-shrink:0;font-size:20px;">${c.ai_score || 0}★</div>
+                            <div style="flex:1;min-width:0;margin-left:12px;">
+                                <div class="content-full" style="font-size:15px;line-height:1.7;color:#222;white-space:pre-wrap;word-break:break-word;">${escapeHtml(c.content || '')}</div>
+                                <div class="ai-label" style="margin-top:10px;padding:6px 12px;background:#f3e5f5;border-radius:4px;font-size:13px;color:#6a1b9a;">
+                                    <strong>AI:</strong> ${escapeHtml(c.ai_label || '')} — ${escapeHtml(c.ai_reason || '')}
+                                </div>
+                                <div class="meta" style="margin-top:10px;">
+                                    🎵 <a href="javascript:void(0)" onclick="loadSongDetailById(${c.song_id})" style="color:#333;text-decoration:none;font-weight:500;">${escapeHtml(c.song_name || '')}</a>
+                                    · 👤 ${escapeHtml(c.user_nickname || '')} · ❤️ ${(c.liked_count || 0).toLocaleString()} 赞
+                                </div>
+                                <div class="links" style="margin-top:8px;font-size:12px;">
+                                    <a href="javascript:void(0)" onclick="loadCommentById(${c.song_id})" '${escapeHtml(c.song_name || '').replace(/'/g, "\\\\'")}')" style="color:#c20c0c;margin-right:12px;">💬 查看全部评论</a>
+                                    <a href="https://music.163.com/song?id=${c.song_id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 `).join('')}
