@@ -84,9 +84,15 @@ class Comment(Base):
     comment_time = Column(Integer, default=0)  # timestamp ms
     is_hot = Column(Integer, default=0)  # 0=普通 1=热门
     crawled_at = Column(DateTime, default=now_cst)
+    # AI 评分 (9/4 老杨要求)
+    ai_score = Column(Integer, default=-1)  # 0-5 星 (-1=未评分)
+    ai_label = Column(String(20))  # "口水" / "中等" / "高质量"
+    ai_reason = Column(String(500))  # AI 给出理由 (20字内)
+    ai_analyzed_at = Column(DateTime)  # AI 分析时间
 
     __table_args__ = (
         Index("idx_comments_song_time", "song_id", "comment_time"),
+        Index("idx_comments_ai_score", "ai_score", "liked_count"),
     )
 
 

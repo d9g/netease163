@@ -857,3 +857,104 @@ def api_run_hot_stats():
         return {"success": True, "inserted": inserted, "stat_date": today.isoformat()}
     finally:
         session.close()
+
+
+# ==================== AI 评论质量分析 (9/4 老杨要求) ====================
+@app.post("/api/v1/admin/comments/analyze", tags=["AI"])
+def api_analyze_comments(
+    limit: int = Query(100, ge=1, le=500),
+    min_liked: int = Query(0, ge=0, description="最低点赞数 (0=全部, 10=至少10赞)"),
+    async_run: bool = Query(True, description="是否异步 (不阻塞)"),
+):
+    """AI 评论质量分析 - 调用 LLM 识别评论级别"""
+    from netease163.ai import get_analyzer
+    analyzer = get_analyzer()
+    if async_run:
+        result = analyzer.analyze_pending_async(limit=limit, min_liked=min_liked)
+        result["mode"] = "async"
+        return result
+    else:
+        result = analyzer.analyze_pending(limit=limit, min_liked=min_liked)
+        result["mode"] = "sync"
+        return {"success": True, **result}
+
+
+@app.get("/api/v1/comments/high-quality", tags=["排行"])
+def api_high_quality_comments(
+    min_score: int = Query(4, ge=4, le=5, description="最低 AI 评分"),
+    min_liked: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """高质量评论排行 (AI 评分 + 点赞数综合)"""
+    from netease163.storage.db import get_session
+    from netease163.storage.models import Comment, Song
+    from sqlalchemy import select, desc
+    session = get_session()
+    try:
+        stmt = (
+            select(Comment, Song.name)
+            .join(Song, Song.id == Comment.song_id)
+            .where(Comment.ai_score >= min_score)
+            .where(Comment.liked_count >= min_liked)
+            .order_by(desc(Comment.ai_score), desc(Comment.liked_count))
+            .limit(limit)
+        )
+        rows = session.execute(stmt).all()
+        return {
+            "min_score": min_score,
+            "count": len(rows),
+            "comments": [
+                {
+                    "rank": i + 1,
+                    "comment_id": r[0].comment_id,
+                    "song_id": r[0].song_id,
+                    "song_name": r[1],
+                    "user_nickname": r[0].user_nickname,
+                    "content": r[0].content[:200] if r[0].content else "",
+                    "liked_count": r[0].liked_count or 0,
+                    "ai_score": r[0].ai_score,
+                    "ai_label": r[0].ai_label,
+                    "ai_reason": r[0].ai_reason,
+                }
+                for i, r in enumerate(rows)
+            ],
+        }
+    finally:
+        session.close()
+
+
+@app.get("/api/v1/comments/quality-stats", tags=["排行"])
+def api_quality_stats():
+    """评论质量统计 (0-5 星分布)"""
+    from netease163.storage.db import get_session
+    from netease163.storage.models import Comment
+    from sqlalchemy import select, func
+    session = get_session()
+    try:
+        total = session.execute(select(func.count(Comment.id))).scalar() or 0
+        analyzed = session.execute(select(func.count(Comment.id)).where(Comment.ai_score >= 0)).scalar() or 0
+        una = session.execute(select(func.count(Comment.id)).where(Comment.ai_score == -1)).scalar() or 0
+        # 分布
+        dist = {}
+        for star in range(6):
+            cnt = session.execute(
+                select(func.count(Comment.id)).where(Comment.ai_score == star)
+            ).scalar() or 0
+            dist[f"{star}星"] = cnt
+        # label 分布
+        labels = session.execute(
+            select(Comment.ai_label, func.count(Comment.id))
+            .where(Comment.ai_score >= 0)
+            .group_by(Comment.ai_label)
+        ).all()
+        label_dist = {r[0] or "未知": r[1] for r in labels}
+        return {
+            "total_comments": total,
+            "analyzed": analyzed,
+            "unanalyzed": una,
+            "analyze_rate": f"{(analyzed/total*100):.1f}%" if total > 0 else "0%",
+            "score_distribution": dist,
+            "label_distribution": label_dist,
+        }
+    finally:
+        session.close()
