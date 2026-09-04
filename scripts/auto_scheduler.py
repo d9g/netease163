@@ -39,6 +39,15 @@ BATCH_SLEEP = 0.3  # 批间隔 (秒)
 async def comment_analyze_scheduler():
     """30 分钟轮询: 分析 500 评论"""
     logger.info(f"🚀 启动评论分析调度器: 每 {POLL_INTERVAL // 60} 分钟跑 {COMMENTS_PER_BATCH} 条")
+
+    # 启动时先跑一次程序预筛 (老杨 15:44 反馈)
+    try:
+        from scripts.pre_filter_trivial_comments import pre_filter_trivial
+        result = pre_filter_trivial()
+        logger.info(f"✅ 启动预筛: {result}")
+    except Exception as e:
+        logger.warning(f"⚠️ 启动预筛跳过: {e}")
+
     analyzer = get_analyzer()
     while True:
         try:
