@@ -42,6 +42,9 @@ class CommentItem(BaseModel):
     content: str
     liked_count: int = 0
     time: int = 0
+    ai_score: int = -1
+    ai_label: str = ""
+    ai_reason: str = ""
 
 
 class CommentResponse(BaseModel):
@@ -194,12 +197,48 @@ def get_comment(
     limit: int = Query(20, ge=1, le=100, description="返回条数"),
     offset: int = Query(0, ge=0, description="分页偏移"),
     hot_only: bool = Query(False, description="只看热门"),
+    hide_zero: bool = Query(True, description="过滤 0 星口水评论"),
 ):
-    """获取歌曲评论"""
-    result = CommentSpider().safe_fetch(song_id, limit=limit, offset=offset, hot_only=hot_only)
+    """获取歌曲评论 (实时拉取 + 本地 ai_score 合并 + 过滤 0 星)"""
+    result = CommentSpider().safe_fetch(song_id, limit=limit * 2, offset=offset, hot_only=hot_only)
     if result is None:
         raise HTTPException(404, "评论获取失败")
-    return result
+
+    # 从本地 DB 查 ai_score (按 comment_id 匹配)
+    from netease163.storage.db import get_session
+    from netease163.storage.models import Comment as CommentModel
+    session = get_session()
+    try:
+        # 拿这歌的所有 ai_score (按 comment_id)
+        db_scores = {}
+        rows = session.execute(
+            select(CommentModel.comment_id, CommentModel.ai_score, CommentModel.ai_label, CommentModel.ai_reason)
+            .where(CommentModel.song_id == song_id)
+        ).all()
+        for r in rows:
+            db_scores[r[0]] = {"ai_score": r[1], "ai_label": r[2], "ai_reason": r[3]}
+    finally:
+        session.close()
+
+    # 合并 + 过滤 0 星
+    def merge_and_filter(items):
+        out = []
+        for c in items:
+            score_info = db_scores.get(c.get("id"), {})
+            c["ai_score"] = score_info.get("ai_score", -1)
+            c["ai_label"] = score_info.get("ai_label", "")
+            c["ai_reason"] = score_info.get("ai_reason", "")
+            if hide_zero and c["ai_score"] == 0:
+                continue  # 跳过口水评论
+            out.append(c)
+        return out
+
+    return {
+        "song_id": result["song_id"],
+        "total": result["total"],
+        "hot_comments": merge_and_filter(result.get("hot_comments", [])),
+        "comments": merge_and_filter(result.get("comments", [])),
+    }
 
 
 # ==================== 搜索 ====================

@@ -1235,12 +1235,17 @@
                             <button class="sort-btn" onclick="switchSort('time')" style="padding:4px 10px;border-radius:4px;border:1px solid ${sort_by==='time'?color:'#ccc'};background:${sort_by==='time'?color:'#fff'};color:${sort_by==='time'?'#fff':'#333'};cursor:pointer;font-size:12px;">⏱ 最新</button>
                         </div>
                     </div>
-                    ${items.length === 0 ? '<p style="color:#999;text-align:center;padding:40px 0;">这一页没有评论了, 试试上一页或切排序</p>' : items.map((c, i) => `
+                    ${items.length === 0 ? '<p style="color:#999;text-align:center;padding:40px 0;">这一页没有评论了, 试试上一页或切排序</p>' : items.map((c, i) => {
+                        const stars = c.ai_score >= 1 ? '⭐'.repeat(c.ai_score || 0) : '';
+                        const aiBadge = c.ai_score >= 4 ? `<span style="background:#f3e5f5;color:#6a1b9a;padding:2px 6px;border-radius:3px;font-size:11px;margin-left:6px;">${stars} ${escapeHtml(c.ai_label || '')}</span>` : '';
+                        return `
                         <div class="modal-comment-item" style="border-left-color:${color};">
-                            <div class="modal-comment-meta">${_modalOffset + i + 1}. ${escapeHtml(c.user?.nickname || '匿名')} · 👍 ${(c.liked_count||0).toLocaleString()} · ${c.time ? new Date(c.time).toLocaleDateString() : ''}</div>
+                            <div class="modal-comment-meta">${_modalOffset + i + 1}. ${escapeHtml(c.user?.nickname || '匿名')} · 👍 ${(c.liked_count||0).toLocaleString()} · ${c.time ? new Date(c.time).toLocaleDateString() : ''}${aiBadge}</div>
                             <div class="modal-comment-content">${escapeHtml(c.content || '')}</div>
+                            ${c.ai_score >= 4 && c.ai_reason ? `<div class="modal-comment-ai">💡 ${escapeHtml(c.ai_reason)}</div>` : ''}
                         </div>
-                    `).join('')}
+                        `;
+                    }).join('')}
                     <div style="display:flex;justify-content:space-between;margin-top:20px;padding-top:16px;border-top:1px solid #eee;">
                         <button class="btn" onclick="prevPage()" style="padding:8px 16px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer;" ${_modalOffset === 0 ? 'disabled' : ''}>← 上一页</button>
                         <span style="color:#666;font-size:13px;line-height:36px;">第 ${Math.floor(_modalOffset / MODAL_PAGE_SIZE) + 1} 页</span>

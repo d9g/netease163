@@ -30,9 +30,10 @@ from netease163.api.cst_time import now_cst
 logger = get_logger("netease163.scheduler")
 
 # 配置
-POLL_INTERVAL = 30 * 60  # 30 分钟
-COMMENTS_PER_BATCH = 500  # 每次 500 评论
+POLL_INTERVAL = 15 * 60  # 15 分钟 (加频)
+COMMENTS_PER_BATCH = 2000  # 每次 2000 评论 (80 批 × 25)
 MIN_LIKED_DEFAULT = 0  # 全部 (按点赞数倒序, 优先评热门)
+BATCH_SLEEP = 0.3  # 批间隔 (秒)
 
 
 async def comment_analyze_scheduler():

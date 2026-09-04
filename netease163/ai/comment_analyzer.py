@@ -28,8 +28,9 @@ AI_SCORE_THRESHOLDS = {
 PROMPT_TEMPLATE = """你是网易云音乐评论质量分析专家。请对以下 {n} 条评论按 0-5 星评分:
 
 评分标准:
-- 0-1 星: 口水评论 (如 "顶", "好听", "好听", "支持", 单字/单表情)
-- 2-3 星: 中等评论 (表达感受但无深度, 如 "好听到哭", "想家了")
+- 0 星: 完全口水 (单字/单表情/无意义反复, 如 "顶", "哈哈哈", "哥", "啊啊啊", "路过", "💗")
+- 1 星: 基本口水 (口语化、无深度的感叹, 如 "好听", "支持", "喜欢", "哭了", "笑死")
+- 2-3 星: 中等评论 (表达感受但无深度/故事, 如 "好听到哭", "想家了", "上头了")
 - 4-5 星: 高质量评论 (有故事/有情感深度/有见解/有文采, ≥30字且言之有物)
 
 请严格按 JSON 数组返回, 每条评论对应一个对象:
@@ -232,8 +233,9 @@ class CommentAnalyzer:
             results = self.analyze_batch(batch)
             all_results.extend(results)
             n_batches += 1
-            # 防 rate limit
-            time.sleep(0.5)
+            # 防 rate limit (从调度器读 BATCH_SLEEP, 默认 0.3)
+            sleep_sec = globals().get('BATCH_SLEEP', 0.3)
+            time.sleep(sleep_sec)
         # 写库
         analyzed = 0
         session = get_session()
