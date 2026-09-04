@@ -271,6 +271,77 @@
         .toast.show { opacity: 1; }
         .toast.error { background: #dc3545; }
         .toast.success { background: #28a745; }
+
+        /* 弹窗 */
+        .modal { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; }
+        .modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.5); }
+        .modal-content {
+            position: relative;
+            background: #fff;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .modal-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .modal-header h3 { margin: 0; font-size: 18px; color: #333; }
+        .modal-close {
+            font-size: 28px;
+            cursor: pointer;
+            color: #999;
+            line-height: 1;
+            padding: 0 8px;
+        }
+        .modal-close:hover { color: #c20c0c; }
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .modal-footer {
+            padding: 12px 20px;
+            border-top: 1px solid #eee;
+            display: flex;
+            gap: 16px;
+            font-size: 13px;
+            background: #f8f9fa;
+        }
+        .modal-comment-item {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 10px 0;
+            border-left: 3px solid #c20c0c;
+        }
+        .modal-comment-meta {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 6px;
+        }
+        .modal-comment-content {
+            font-size: 14px;
+            line-height: 1.6;
+            color: #333;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .modal-comment-ai {
+            margin-top: 8px;
+            padding: 6px 10px;
+            background: #f3e5f5;
+            border-radius: 4px;
+            font-size: 12px;
+            color: #6a1b9a;
+        }
     </style>
 </head>
 <body>
@@ -315,6 +386,22 @@
     </div>
 
     <div id="toast" class="toast"></div>
+
+    <!-- 评论弹窗 -->
+    <div id="commentModal" class="modal" style="display:none;">
+        <div class="modal-overlay" onclick="closeCommentModal()"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="commentModalTitle">💬 评论</h3>
+                <span class="modal-close" onclick="closeCommentModal()">×</span>
+            </div>
+            <div id="commentModalBody" class="modal-body">⏳ 加载中...</div>
+            <div class="modal-footer">
+                <a id="commentModalSongLink" href="#" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
+                <a id="commentModalAllLink" href="javascript:void(0)" onclick="goToCommentPage()" style="color:#c20c0c;">📄 完整评论页</a>
+            </div>
+        </div>
+    </div>
 
     <script>
         // ==================== 状态 ====================
@@ -1103,6 +1190,64 @@
             } catch (e) { toast('加载失败', 'error'); r.innerHTML = ''; }
         }
 
+        // ==================== 评论弹窗 (9/4 老杨反馈) ====================
+        let _modalSongId = null;
+        async function openCommentModal(song_id, song_name) {
+            _modalSongId = song_id;
+            const modal = document.getElementById('commentModal');
+            const body = document.getElementById('commentModalBody');
+            const title = document.getElementById('commentModalTitle');
+            const songLink = document.getElementById('commentModalSongLink');
+            title.innerHTML = `💬 ${escapeHtml(song_name || '评论')} <span style="font-size:13px;color:#666;">[ID:${song_id}]</span>`;
+            songLink.href = `https://music.163.com/song?id=${song_id}`;
+            body.innerHTML = '<p style="color:#999;">⏳ 加载评论...</p>';
+            modal.style.display = 'flex';
+            try {
+                const data = await api('/comment/' + song_id + '?limit=20');
+                const hot = (data.hot_comments || []).slice(0, 20);
+                const all = data.comments || [];
+                const total = data.total || 0;
+                if (total === 0) {
+                    body.innerHTML = '<p style="color:#999;">暂无评论, 已触发后台抓取 ⏳</p>';
+                    fetch(API_BASE + '/crawl/comment/' + song_id, {method: 'POST'}).catch(() => {});
+                } else {
+                    body.innerHTML = `
+                        <p style="color:#666;font-size:13px;margin-bottom:16px;">共 ${total.toLocaleString()} 条 · 展示热门 ${hot.length} 条 + 最新 ${Math.min(all.length, 10)} 条</p>
+                        ${hot.length > 0 ? '<h4 style="margin:16px 0 8px;color:#c20c0c;">🔥 热门评论</h4>' + hot.map((c, i) => `
+                            <div class="modal-comment-item">
+                                <div class="modal-comment-meta">${i+1}. ${escapeHtml(c.user?.nickname || '匿名')} · 👍 ${(c.liked_count||0).toLocaleString()}</div>
+                                <div class="modal-comment-content">${escapeHtml(c.content || '')}</div>
+                            </div>
+                        `).join('') : '<p style="color:#999;">暂无热门评论</p>'}
+                        ${all.length > 0 ? '<h4 style="margin:16px 0 8px;color:#1a73e8;">💬 最新评论</h4>' + all.slice(0, 10).map((c, i) => `
+                            <div class="modal-comment-item" style="border-left-color:#1a73e8;">
+                                <div class="modal-comment-meta">${i+1}. ${escapeHtml(c.user?.nickname || '匿名')} · 👍 ${(c.liked_count||0).toLocaleString()}</div>
+                                <div class="modal-comment-content">${escapeHtml(c.content || '')}</div>
+                            </div>
+                        `).join('') : ''}
+                    `;
+                }
+            } catch (e) {
+                body.innerHTML = `<p style="color:#c20c0c;">❌ 加载失败: ${escapeHtml(e.message)}</p>`;
+            }
+        }
+
+        function closeCommentModal() {
+            document.getElementById('commentModal').style.display = 'none';
+        }
+
+        function goToCommentPage() {
+            if (_modalSongId) {
+                closeCommentModal();
+                navigateToComment(_modalSongId);
+            }
+        }
+
+        // ESC 关闭弹窗
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') closeCommentModal();
+        });
+
         // ==================== 排行中心导航 (9/4 老杨反馈) ====================
         async function navigateToComment(song_id) {
             // 切换到 comment 页 + 自动加载评论
@@ -1153,7 +1298,7 @@
                             </div>
                             <div class="meta">🎤 ${escapeHtml((s.artists || []).join(', '))} · 💬 ${s.comment_total || 0} 评论 · ❤️ ${(s.liked_total || 0).toLocaleString()} 赞</div>
                             <div class="links" style="margin-top:6px;font-size:12px;">
-                                <a href="javascript:void(0)" onclick="navigateToComment(${s.id})" style="color:#c20c0c;margin-right:12px;">💬 查看评论</a>
+                                <a href="javascript:void(0)" onclick="openCommentModal(${s.id}, '${escapeHtml(s.name).replace(/'/g, "\\'")}')" style="color:#c20c0c;margin-right:12px;">💬 查看评论</a>
                                 <a href="https://music.163.com/song?id=${s.id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
                             </div>
                         </div>
@@ -1182,7 +1327,7 @@
                                 </div>
                                 <div class="links" style="margin-top:6px;font-size:12px;">
                                     🎵 <a href="javascript:void(0)" onclick="navigateToSong(${c.song_id})" style="color:#333;text-decoration:none;">${escapeHtml(c.song_name || '')}</a>
-                                    · <a href="javascript:void(0)" onclick="navigateToComment(${c.song_id})" style="color:#c20c0c;margin-right:12px;">💬 查看全部</a>
+                                    · <a href="javascript:void(0)" onclick="openCommentModal(${c.song_id}, '${escapeHtml(c.song_name || "").replace(/'/g, "\\'")}')" style="color:#c20c0c;margin-right:12px;">💬 查看全部</a>
                                     · <a href="https://music.163.com/song?id=${c.song_id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
                                 </div>
                             </div>
@@ -1210,7 +1355,7 @@
                             </div>
                             <div class="meta">🎤 ${escapeHtml((s.artists || []).join(', '))} · 📈 +${s.hot_increase || 0} 热度</div>
                             <div class="links" style="margin-top:6px;font-size:12px;">
-                                <a href="javascript:void(0)" onclick="navigateToComment(${s.id})" style="color:#c20c0c;margin-right:12px;">💬 查看评论</a>
+                                <a href="javascript:void(0)" onclick="openCommentModal(${s.id}, '${escapeHtml(s.name).replace(/'/g, "\\'")}')" style="color:#c20c0c;margin-right:12px;">💬 查看评论</a>
                                 <a href="https://music.163.com/song?id=${s.id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
                             </div>
                         </div>
@@ -1242,7 +1387,7 @@
                                     · 👤 ${escapeHtml(c.user_nickname || '')} · ❤️ ${(c.liked_count || 0).toLocaleString()} 赞
                                 </div>
                                 <div class="links" style="margin-top:8px;font-size:12px;">
-                                    <a href="javascript:void(0)" onclick="navigateToComment(${c.song_id})" style="color:#c20c0c;margin-right:12px;">💬 查看全部评论</a>
+                                    <a href="javascript:void(0)" onclick="openCommentModal(${c.song_id}, '${escapeHtml(c.song_name || "").replace(/'/g, "\\'")}')" style="color:#c20c0c;margin-right:12px;">💬 查看全部评论</a>
                                     <a href="https://music.163.com/song?id=${c.song_id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
                                 </div>
                             </div>
