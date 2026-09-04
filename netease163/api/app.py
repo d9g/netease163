@@ -1,6 +1,5 @@
 """
 FastAPI 主应用 - 提供 HTTP REST API
-端口 9700 (避开现有 8501/8080/8600/9876)
 """
 import sys
 from pathlib import Path

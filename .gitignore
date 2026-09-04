@@ -5,33 +5,30 @@ __pycache__/
 *.egg
 .eggs/
 .pytest_cache/
-
 # venv
 .venv/
 venv/
 env/
-
 # 临时
 data/
 logs/
 *.log
 .DS_Store
-
 # 编辑器
 .vscode/
 .idea/
 *.swp
 *.swo
-
 # 凭据
 .env
 .env.local
 *.pem
 *.key
-
 # 爬虫数据
 songs.db
 songs.db-journal
 *.sqlite
 *.sqlite3
-.env
+docs/screenshots/
+*.db-journal
+*.db-wal

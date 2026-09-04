@@ -16,7 +16,7 @@ _SessionLocal = None
 
 def get_db_url() -> str:
     """获取 DB URL"""
-    return os.getenv("DATABASE_URL") or "sqlite:////root/netease163/data/netease163.db"
+    return os.getenv("DATABASE_URL") or "sqlite:///data/netease163.db"
 
 
 def get_engine():
@@ -31,7 +31,7 @@ def get_engine():
             Path(db_path).parent.mkdir(parents=True, exist_ok=True)
             connect_args = {
                 "check_same_thread": False,
-                # 老杨 18:10 修 readonly database bug
+                # 使用 WAL 模式支持读写并发
                 # WAL 模式允许读写并发, 避免 uvicorn 主线程 + scheduler 线程同时写导致 readonly
                 "timeout": 30,
             }
