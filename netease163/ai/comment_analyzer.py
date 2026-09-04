@@ -84,7 +84,7 @@ class CommentAnalyzer:
                 },
                 json={
                     "model": model,
-                    "max_tokens": 4096,
+                    "max_tokens": 16384,
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.3,
                 },
