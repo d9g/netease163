@@ -12,7 +12,7 @@ import os
 import json
 from typing import Optional, List
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import select, func
@@ -565,3 +565,114 @@ def api_login_cookie(music_u: str = Query(..., description="MUSIC_U cookie 值")
     """
     from netease163.login import login_via_cookie
     return login_via_cookie(music_u=music_u)
+
+
+# ==================== 关键词管理 (9/4 老杨要求) ====================
+BUILTIN_SENSITIVE_WORDS = {
+    "政治", "领导人", "国家领导人", "反动", "颠覆", "分裂国家",
+    "色情", "裸聊", "约炮", "一夜情", "援交", "卖淫", "嫖娼",
+    "恐怖袭击", "爆炸制作", "枪支贩卖", "毒品制作", "冰毒配方",
+    "赌博网站", "时时彩", "百家乐", "澳门赌场", "网络诈骗", "电信诈骗",
+    "法轮功", "全能神", "观音法门", "华藏宗门",
+}
+
+
+def is_sensitive_keyword(keyword: str) -> bool:
+    if not keyword or not isinstance(keyword, str):
+        return False
+    keyword_lower = keyword.strip().lower()
+    for sensitive in BUILTIN_SENSITIVE_WORDS:
+        if sensitive in keyword_lower or keyword_lower in sensitive:
+            return True
+    return False
+
+
+@app.post("/api/v1/random/keywords", tags=["随机爬取"])
+def api_add_keyword(payload: dict = Body(..., example={"keyword": "新歌手"})):
+    """手动添加关键词到池（持久化到 DB + 敏感词过滤）"""
+    keyword = (payload.get("keyword") or "").strip()
+    if not keyword:
+        raise HTTPException(400, "keyword 不能为空")
+    if len(keyword) > 20:
+        raise HTTPException(400, "keyword 长度超过 20")
+    if is_sensitive_keyword(keyword):
+        raise HTTPException(400, f"敏感词拒绝: {keyword}")
+    from netease163.random_crawler.keywords import get_keyword_pool
+    pool = get_keyword_pool()
+    if keyword in pool.get_all():
+        return {"success": True, "action": "skipped", "reason": "已存在", "keyword": keyword, "pool_size": len(pool.get_all())}
+    pool.add(keyword)
+    try:
+        from netease163.storage.db import get_session
+        from netease163.storage.models import SearchLog
+        session = get_session()
+        try:
+            session.add(SearchLog(keyword=keyword, source="manual_add"))
+            session.commit()
+        finally:
+            session.close()
+    except Exception as e:
+        logger.warning(f"关键词持久化失败: {e}")
+    return {"success": True, "action": "added", "keyword": keyword, "pool_size": len(pool.get_all())}
+
+
+@app.delete("/api/v1/random/keywords", tags=["随机爬取"])
+def api_remove_keyword(payload: dict = Body(..., example={"keyword": "周杰伦"})):
+    """从关键词池删除关键词（不准删内置）"""
+    keyword = (payload.get("keyword") or "").strip()
+    if not keyword:
+        raise HTTPException(400, "keyword 不能为空")
+    from netease163.random_crawler.keywords import get_keyword_pool, INITIAL_KEYWORDS
+    import netease163.random_crawler.keywords as kw_module
+    pool = get_keyword_pool()
+    if keyword in INITIAL_KEYWORDS:
+        raise HTTPException(400, f"内置关键词不能删除: {keyword}")
+    all_keywords = pool.get_all()
+    if keyword not in all_keywords:
+        return {"success": True, "action": "skipped", "reason": "不存在", "keyword": keyword, "pool_size": len(all_keywords)}
+    new_pool = list(set(all_keywords) - {keyword})
+    kw_module._pool_instance._pool = new_pool
+    return {"success": True, "action": "removed", "keyword": keyword, "pool_size": len(new_pool)}
+
+
+@app.get("/api/v1/random/keywords/sensitive", tags=["随机爬取"])
+def api_sensitive_words():
+    """查看内置敏感词库"""
+    return {"count": len(BUILTIN_SENSITIVE_WORDS), "words": sorted(list(BUILTIN_SENSITIVE_WORDS))}
+
+
+# ==================== 触发评论抓取 (9/4) ====================
+@app.post("/api/v1/crawl/comment/{song_id}", tags=["爬取"])
+def api_trigger_comment_crawl(song_id: int, max_count: int = Query(100, ge=10, le=1000)):
+    """触发评论抓取（异步入队，不阻塞）"""
+    import threading
+    from netease163.storage.db import get_session
+    from netease163.storage.models import Song
+    session = get_session()
+    try:
+        song = session.execute(select(Song).where(Song.id == song_id)).scalar_one_or_none()
+        if not song:
+            raise HTTPException(404, f"歌曲不存在: song_id={song_id}")
+        song_name = song.name
+        song_comment_count = getattr(song, 'comment_total', 0) or 0
+    finally:
+        session.close()
+    def _crawl_comments_async(sid, mc):
+        try:
+            from netease163.crawler.comment import CommentCrawler
+            crawler = CommentCrawler()
+            stats = crawler.crawl_song_comments(sid, max_count=mc)
+            logger.info(f"✅ 后台评论抓取完成: song_id={sid}, stats={stats}")
+        except Exception as e:
+            logger.error(f"❌ 后台评论抓取失败: song_id={sid}, error={e}")
+    thread = threading.Thread(target=_crawl_comments_async, args=(song_id, max_count), daemon=True)
+    thread.start()
+    return {
+        "success": True,
+        "action": "queued",
+        "song_id": song_id,
+        "song_name": song_name,
+        "current_comment_count": song_comment_count,
+        "target_max_count": max_count,
+        "thread_alive": thread.is_alive(),
+    }
