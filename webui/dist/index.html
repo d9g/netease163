@@ -1103,7 +1103,7 @@
                             </div>
                             <div class="meta">🎤 ${escapeHtml((s.artists || []).join(', '))} · 💬 ${s.comment_total || 0} 评论 · ❤️ ${(s.liked_total || 0).toLocaleString()} 赞</div>
                             <div class="links" style="margin-top:6px;font-size:12px;">
-                                <a href="javascript:void(0)" onclick="loadCommentById(${s.id})" '${escapeHtml(s.name).replace(/'/g, "\\\\'")}')" style="color:#c20c0c;margin-right:12px;">💬 查看评论</a>
+                                <a href="javascript:void(0)" onclick="loadCommentById(${s.id})" style="color:#c20c0c;margin-right:12px;">💬 查看评论</a>
                                 <a href="https://music.163.com/song?id=${s.id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
                             </div>
                         </div>
@@ -1132,7 +1132,7 @@
                                 </div>
                                 <div class="links" style="margin-top:6px;font-size:12px;">
                                     🎵 <a href="javascript:void(0)" onclick="loadSongDetailById(${c.song_id})" style="color:#333;text-decoration:none;">${escapeHtml(c.song_name || '')}</a>
-                                    · <a href="javascript:void(0)" onclick="loadCommentById(${c.song_id})" '${escapeHtml(c.song_name || '').replace(/'/g, "\\\\'")}')" style="color:#c20c0c;margin-right:12px;">💬 查看全部</a>
+                                    · <a href="javascript:void(0)" onclick="loadCommentById(${c.song_id})" style="color:#c20c0c;margin-right:12px;">💬 查看全部</a>
                                     · <a href="https://music.163.com/song?id=${c.song_id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
                                 </div>
                             </div>
@@ -1160,7 +1160,7 @@
                             </div>
                             <div class="meta">🎤 ${escapeHtml((s.artists || []).join(', '))} · 📈 +${s.hot_increase || 0} 热度</div>
                             <div class="links" style="margin-top:6px;font-size:12px;">
-                                <a href="javascript:void(0)" onclick="loadCommentById(${s.id})" '${escapeHtml(s.name).replace(/'/g, "\\\\'")}')" style="color:#c20c0c;margin-right:12px;">💬 查看评论</a>
+                                <a href="javascript:void(0)" onclick="loadCommentById(${s.id})" style="color:#c20c0c;margin-right:12px;">💬 查看评论</a>
                                 <a href="https://music.163.com/song?id=${s.id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
                             </div>
                         </div>
@@ -1192,7 +1192,7 @@
                                     · 👤 ${escapeHtml(c.user_nickname || '')} · ❤️ ${(c.liked_count || 0).toLocaleString()} 赞
                                 </div>
                                 <div class="links" style="margin-top:8px;font-size:12px;">
-                                    <a href="javascript:void(0)" onclick="loadCommentById(${c.song_id})" '${escapeHtml(c.song_name || '').replace(/'/g, "\\\\'")}')" style="color:#c20c0c;margin-right:12px;">💬 查看全部评论</a>
+                                    <a href="javascript:void(0)" onclick="loadCommentById(${c.song_id})" style="color:#c20c0c;margin-right:12px;">💬 查看全部评论</a>
                                     <a href="https://music.163.com/song?id=${c.song_id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
                                 </div>
                             </div>
