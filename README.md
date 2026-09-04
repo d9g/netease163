@@ -116,11 +116,13 @@ netease163/
 
 ### 桌面端
 
-![WebUI Desktop](docs/screenshots/webui-desktop.png)
+[![WebUI Desktop](docs/screenshots/webui-desktop.png)](docs/screenshots/webui-desktop.png)
 
 ### 移动端
 
-![WebUI Mobile](docs/screenshots/webui-mobile.png)
+[![WebUI Mobile](docs/screenshots/webui-mobile.png)](docs/screenshots/webui-mobile.png)
+
+> 💡 点击图片查看完整大小（GitHub 私有仓库需登录后访问）
 
 ## 📝 开发
 

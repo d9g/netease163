@@ -632,7 +632,40 @@
 
         function renderCandidates(items, onSelect) {
             // 渲染候选列表 (重名筛选用)
+            // onSelect 决定类型: loadCommentById / loadSongDetailById / loadLyricById = 歌曲
+            //                   loadArtistById = 歌手
+            //                   loadPlaylistById = 歌单
+            //                   loadAlbumById = 专辑
             if (!items || items.length === 0) return '<p style="color: #999;">无结果</p>';
+
+            // 根据 onSelect 决定链接类型 + ID 路径
+            let linkType = '';
+            let linkUrl = '';
+            if (onSelect.includes('Comment') || onSelect.includes('Song') || onSelect.includes('Lyric')) {
+                linkType = 'song';
+                linkUrl = (id) => `https://music.163.com/song?id=${id}`;
+            } else if (onSelect.includes('Artist')) {
+                linkType = 'artist';
+                linkUrl = (id) => `https://music.163.com/artist?id=${id}`;
+            } else if (onSelect.includes('Playlist')) {
+                linkType = 'playlist';
+                linkUrl = (id) => `https://music.163.com/playlist?id=${id}`;
+            } else if (onSelect.includes('Album')) {
+                linkType = 'album';
+                linkUrl = (id) => `https://music.163.com/album?id=${id}`;
+            } else {
+                linkType = 'song';
+                linkUrl = (id) => `https://music.163.com/song?id=${id}`;
+            }
+
+            // 不同类型的 163 入口文案
+            const linkText = {
+                song: '🎵 163 播放',
+                artist: '👤 163 歌手主页',
+                playlist: '📋 163 歌单播放',
+                album: '💿 163 专辑播放'
+            }[linkType];
+
             return items.map((c, i) => {
                 const dur = c.duration ? ` · ${Math.floor(c.duration/60000)}:${String(Math.floor((c.duration%60000)/1000)).padStart(2, '0')}` : '';
                 const extra = c.extra ? ` · ${escapeHtml(c.extra)}` : '';
@@ -644,7 +677,7 @@
                             <div class="name">${escapeHtml(c.name)}</div>
                             <div class="meta">${escapeHtml(c.subtitle || '')}${extra}${dur}${commentCount}</div>
                             <div class="links" style="margin-top:6px;font-size:12px;">
-                                <a href="https://music.163.com/song?id=${c.id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
+                                <a href="${linkUrl(c.id)}" target="_blank" style="color:#1a73e8;">${linkText}</a>
                             </div>
                         </div>
                     </div>
@@ -1070,6 +1103,23 @@
             } catch (e) { toast('加载失败', 'error'); r.innerHTML = ''; }
         }
 
+        // ==================== 排行中心导航 (9/4 老杨反馈) ====================
+        async function navigateToComment(song_id) {
+            // 切换到 comment 页 + 自动加载评论
+            showPage('comment');
+            await new Promise(resolve => setTimeout(resolve, 100));
+            document.getElementById('commentId').value = song_id;
+            await commentSearch();
+        }
+
+        async function navigateToSong(song_id) {
+            // 切换到 song 页 + 自动加载歌曲详情
+            showPage('song');
+            await new Promise(resolve => setTimeout(resolve, 100));
+            document.getElementById('songId').value = song_id;
+            await songSearch();
+        }
+
         // ==================== 排行中心 (9/4) ====================
         async function switchRankTab(tab) {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -1099,11 +1149,11 @@
                         <div class="num" style="background:${i<3?'#c20c0c':'#999'};">${i+1}</div>
                         <div class="info">
                             <div class="name">
-                                <a href="javascript:void(0)" onclick="loadSongDetailById(${s.id})" style="color:#333;text-decoration:none;">${escapeHtml(s.name)}</a>
+                                <a href="javascript:void(0)" onclick="navigateToSong(${s.id})" style="color:#333;text-decoration:none;">${escapeHtml(s.name)}</a>
                             </div>
                             <div class="meta">🎤 ${escapeHtml((s.artists || []).join(', '))} · 💬 ${s.comment_total || 0} 评论 · ❤️ ${(s.liked_total || 0).toLocaleString()} 赞</div>
                             <div class="links" style="margin-top:6px;font-size:12px;">
-                                <a href="javascript:void(0)" onclick="loadCommentById(${s.id})" style="color:#c20c0c;margin-right:12px;">💬 查看评论</a>
+                                <a href="javascript:void(0)" onclick="navigateToComment(${s.id})" style="color:#c20c0c;margin-right:12px;">💬 查看评论</a>
                                 <a href="https://music.163.com/song?id=${s.id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
                             </div>
                         </div>
@@ -1131,8 +1181,8 @@
                                     👤 ${escapeHtml(c.user_nickname || '')} · ❤️ ${(c.liked_count || 0).toLocaleString()} 赞
                                 </div>
                                 <div class="links" style="margin-top:6px;font-size:12px;">
-                                    🎵 <a href="javascript:void(0)" onclick="loadSongDetailById(${c.song_id})" style="color:#333;text-decoration:none;">${escapeHtml(c.song_name || '')}</a>
-                                    · <a href="javascript:void(0)" onclick="loadCommentById(${c.song_id})" style="color:#c20c0c;margin-right:12px;">💬 查看全部</a>
+                                    🎵 <a href="javascript:void(0)" onclick="navigateToSong(${c.song_id})" style="color:#333;text-decoration:none;">${escapeHtml(c.song_name || '')}</a>
+                                    · <a href="javascript:void(0)" onclick="navigateToComment(${c.song_id})" style="color:#c20c0c;margin-right:12px;">💬 查看全部</a>
                                     · <a href="https://music.163.com/song?id=${c.song_id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
                                 </div>
                             </div>
@@ -1156,11 +1206,11 @@
                         <div class="num" style="background:${i<3?'#c20c0c':'#999'};">${i+1}</div>
                         <div class="info">
                             <div class="name">
-                                <a href="javascript:void(0)" onclick="loadSongDetailById(${s.id})" style="color:#333;text-decoration:none;">${escapeHtml(s.name)}</a>
+                                <a href="javascript:void(0)" onclick="navigateToSong(${s.id})" style="color:#333;text-decoration:none;">${escapeHtml(s.name)}</a>
                             </div>
                             <div class="meta">🎤 ${escapeHtml((s.artists || []).join(', '))} · 📈 +${s.hot_increase || 0} 热度</div>
                             <div class="links" style="margin-top:6px;font-size:12px;">
-                                <a href="javascript:void(0)" onclick="loadCommentById(${s.id})" style="color:#c20c0c;margin-right:12px;">💬 查看评论</a>
+                                <a href="javascript:void(0)" onclick="navigateToComment(${s.id})" style="color:#c20c0c;margin-right:12px;">💬 查看评论</a>
                                 <a href="https://music.163.com/song?id=${s.id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
                             </div>
                         </div>
@@ -1188,11 +1238,11 @@
                                     <strong>AI:</strong> ${escapeHtml(c.ai_label || '')} — ${escapeHtml(c.ai_reason || '')}
                                 </div>
                                 <div class="meta" style="margin-top:10px;">
-                                    🎵 <a href="javascript:void(0)" onclick="loadSongDetailById(${c.song_id})" style="color:#333;text-decoration:none;font-weight:500;">${escapeHtml(c.song_name || '')}</a>
+                                    🎵 <a href="javascript:void(0)" onclick="navigateToSong(${c.song_id})" style="color:#333;text-decoration:none;font-weight:500;">${escapeHtml(c.song_name || '')}</a>
                                     · 👤 ${escapeHtml(c.user_nickname || '')} · ❤️ ${(c.liked_count || 0).toLocaleString()} 赞
                                 </div>
                                 <div class="links" style="margin-top:8px;font-size:12px;">
-                                    <a href="javascript:void(0)" onclick="loadCommentById(${c.song_id})" style="color:#c20c0c;margin-right:12px;">💬 查看全部评论</a>
+                                    <a href="javascript:void(0)" onclick="navigateToComment(${c.song_id})" style="color:#c20c0c;margin-right:12px;">💬 查看全部评论</a>
                                     <a href="https://music.163.com/song?id=${c.song_id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
                                 </div>
                             </div>
