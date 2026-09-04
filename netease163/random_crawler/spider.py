@@ -41,6 +41,17 @@ ROUND_TOPLIST_SONGS = 6  # 每轮从榜单取 6 首
 ROUND_KEYWORD_SONGS = 4  # 每轮从关键词取 4 首
 ROUND_TARGET = ROUND_TOPLIST_SONGS + ROUND_KEYWORD_SONGS  # 10 首/轮
 
+# 跟时间做朋友分配 (9/4 老杨要求)
+# 每天 100 首: 50% 重爬(7天前) + 30% 新歌 + 20% 评论增量
+# 每轮 10 首: 5 重爬 + 3 新歌 + 2 评论
+RE_WEIGHT = 0.50  # 50% 重新更新
+NEW_WEIGHT = 0.30  # 30% 新歌
+COMMENT_WEIGHT = 0.20  # 20% 评论增量
+ROUND_RE_SONGS = 5  # 每轮重爬 5 首
+ROUND_NEW_SONGS = 3  # 每轮新歌 3 首
+ROUND_COMMENT_SONGS = 2  # 每轮评论增量 2 首
+STALE_DAYS = 7  # 7 天前的歌优先重爬
+
 # 跑批轮次 (24h / 30min = 48 轮)
 DAILY_ROUNDS = 48
 
@@ -80,6 +91,94 @@ class RandomCrawler:
         try:
             stmt = select(Song.id).where(Song.id == song_id)
             return session.execute(stmt).first() is not None
+        finally:
+            session.close()
+
+    def _get_priority_targets(self, limit: int) -> List[Dict]:
+        """跟时间做朋友: 选 7 天前爬过但有评论的歌 (按 hot_score 排)
+        返回: [{song_id, name, last_crawled_at, comment_count}]
+        """
+        from datetime import datetime, timedelta
+        from ..storage.models import SongCrawlStatus
+        from sqlalchemy import and_, desc
+        cutoff = (datetime.now() - timedelta(days=STALE_DAYS)).isoformat()
+        session = get_session()
+        try:
+            # 找 7 天前爬过的歌, 按 songs.comment_total desc
+            stmt = (
+                select(Song.id, Song.name, Song.comment_total, SongCrawlStatus.last_crawled_at)
+                .join(SongCrawlStatus, SongCrawlStatus.song_id == Song.id)
+                .where(SongCrawlStatus.last_crawled_at < cutoff)
+                .where(Song.comment_total > 0)
+                .order_by(desc(Song.comment_total))
+                .limit(limit)
+            )
+            rows = session.execute(stmt).all()
+            return [
+                {"song_id": r[0], "name": r[1], "comment_count": r[2] or 0, "last_crawled_at": r[3]}
+                for r in rows
+            ]
+        except Exception as e:
+            logger.warning(f"⚠️  查 priority 失败: {e}")
+            return []
+        finally:
+            session.close()
+
+    def _get_comment_targets(self, limit: int) -> List[Dict]:
+        """跟时间做朋友: 选热门但 3 天没爬评论的歌"""
+        from datetime import datetime, timedelta
+        from ..storage.models import SongCrawlStatus
+        from sqlalchemy import and_, desc
+        cutoff = (datetime.now() - timedelta(days=3)).isoformat()
+        session = get_session()
+        try:
+            # 3 天没爬评论 + 有评论的歌
+            stmt = (
+                select(Song.id, Song.name, Song.comment_total)
+                .outerjoin(
+                    SongCrawlStatus,
+                    and_(SongCrawlStatus.song_id == Song.id, SongCrawlStatus.last_comment_crawled_at >= cutoff)
+                )
+                .where(SongCrawlStatus.song_id.is_(None))
+                .where(Song.comment_total > 0)
+                .order_by(desc(Song.comment_total))
+                .limit(limit)
+            )
+            rows = session.execute(stmt).all()
+            return [{"song_id": r[0], "name": r[1], "comment_count": r[2] or 0} for r in rows]
+        except Exception as e:
+            logger.warning(f"⚠️  查 comment 目标失败: {e}")
+            return []
+        finally:
+            session.close()
+
+    def _mark_song_crawled(self, song_id: int, comment_crawled: bool = False):
+        """记录 song 爬取状态"""
+        from datetime import datetime
+        from ..storage.models import SongCrawlStatus
+        from sqlalchemy import select
+        session = get_session()
+        try:
+            stmt = select(SongCrawlStatus).where(SongCrawlStatus.song_id == song_id)
+            row = session.execute(stmt).scalar_one_or_none()
+            now = datetime.now()
+            if not row:
+                row = SongCrawlStatus(
+                    song_id=song_id, last_crawled_at=now, crawl_count=1,
+                    last_comment_crawled_at=now if comment_crawled else None,
+                    comment_crawl_count=1 if comment_crawled else 0,
+                )
+                session.add(row)
+            else:
+                row.last_crawled_at = now
+                row.crawl_count = (row.crawl_count or 0) + 1
+                if comment_crawled:
+                    row.last_comment_crawled_at = now
+                    row.comment_crawl_count = (row.comment_crawl_count or 0) + 1
+            session.commit()
+        except Exception as e:
+            logger.warning(f"⚠️  标记 song 状态失败: {e}")
+            session.rollback()
         finally:
             session.close()
 
@@ -236,23 +335,31 @@ class RandomCrawler:
         return 0
 
     def run_one_round(self) -> Dict[str, int]:
-        """跑一轮: 6 榜单 + 4 关键词 = 10 首 + 评论"""
+        """跑一轮: 跟时间做朋友 (9/4 老杨要求)
+        5 首重爬(7天前) + 3 首新歌(榜单/关键词) + 2 首评论增量 = 10 首
+        """
         self._reset_if_new_day()
         round_start = time.time()
-        logger.info(f"🏃 跑一轮 (今天累计 {self.today_count}/{DAILY_TARGET})")
+        logger.info(f"🏃 跑一轮 (今天累计 {self.today_count}/{DAILY_TARGET}) 分配: 重爬 5 + 新歌 3 + 评论 2")
 
-        stats = {"songs_new": 0, "songs_dup": 0, "comments_new": 0}
+        stats = {"songs_new": 0, "songs_recrawl": 0, "songs_dup": 0, "comments_new": 0, "comment_inc": 0}
 
-        # 1. 榜单抽 6 首
-        tl_songs = self._fetch_via_toplist(top_n=ROUND_TOPLIST_SONGS)
-        # 2. 关键词抽 4 首
-        kw_songs = self._fetch_via_keyword(top_n=ROUND_KEYWORD_SONGS)
+        # 1. 重爬 5 首 (7 天前的歌, 跟时间做朋友)
+        priority_targets = self._get_priority_targets(limit=ROUND_RE_SONGS)
+        for t in priority_targets:
+            song_id = t["song_id"]
+            comments_saved = self._fetch_comments_for_song(song_id)
+            stats["comments_new"] += comments_saved
+            self._mark_song_crawled(song_id, comment_crawled=True)
+            stats["songs_recrawl"] += 1
+            random_sleep()
 
-        all_songs = tl_songs + kw_songs
-        logger.info(f"📦 本轮共 {len(all_songs)} 首待入库")
-
-        # 3. 去重入库 + 拉评论
-        for s in all_songs:
+        # 2. 新歌 3 首 (榜单/关键词)
+        # 从 6 榜单 + 4 关键词里取 3 首 (50% 榜单 + 50% 关键词)
+        tl_songs = self._fetch_via_toplist(top_n=2)
+        kw_songs = self._fetch_via_keyword(top_n=1)
+        new_songs = tl_songs + kw_songs
+        for s in new_songs:
             song_id = s.get("id")
             if not song_id:
                 continue
@@ -261,13 +368,23 @@ class RandomCrawler:
                 self.today_count += 1
             else:
                 stats["songs_dup"] += 1
-            # 每首歌都拉评论
+            self._mark_song_crawled(song_id, comment_crawled=False)
             comments_saved = self._fetch_comments_for_song(song_id)
             stats["comments_new"] += comments_saved
             random_sleep()
 
+        # 3. 评论增量 2 首 (3 天没爬评论的热门歌)
+        comment_targets = self._get_comment_targets(limit=ROUND_COMMENT_SONGS)
+        for t in comment_targets:
+            song_id = t["song_id"]
+            comments_saved = self._fetch_comments_for_song(song_id)
+            stats["comment_inc"] += comments_saved
+            stats["comments_new"] += comments_saved
+            self._mark_song_crawled(song_id, comment_crawled=True)
+            random_sleep()
+
         duration = int((time.time() - round_start))
-        logger.info(f"✅ 一轮完成: 新入库 {stats['songs_new']}, 重复 {stats['songs_dup']}, 评论 {stats['comments_new']}, 耗时 {duration}s")
+        logger.info(f"✅ 一轮完成: 重爬 {stats['songs_recrawl']} + 新歌 {stats['songs_new']} + 重复 {stats['songs_dup']} + 评论 {stats['comments_new']} (增量 {stats['comment_inc']}) 耗时 {duration}s")
         return stats
 
     def run_until_target(self, target: int = DAILY_TARGET, max_minutes: int = 240):
