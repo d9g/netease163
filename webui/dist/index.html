@@ -300,7 +300,8 @@
                 <button class="menu-item" data-page="artist">👤 歌手</button>
                 <button class="menu-item" data-page="album">💿 专辑</button>
                 <button class="menu-item" data-page="radio">📻 电台</button>
-                <button class="menu-item" data-page="toplist">🏆 排行榜</button>
+                <button class="menu-item" data-page="toplist">🏆 官方榜单</button>
+                <button class="menu-item" data-page="rankings" style="color: #e74c3c;">🎯 排行中心</button>
                 <button class="menu-item" data-page="random" style="margin-top: 12px; color: #16a085;">🎲 随机爬取</button>
                 <button class="menu-item" data-page="stats" style="color: #16a085;">📊 爬取统计</button>
                 <button class="menu-item" data-page="login" style="margin-top: 12px; color: #c20c0c;">🔐 登录</button>
@@ -527,6 +528,22 @@
                         <button class="btn btn-primary" onclick="loadToplists()">📋 榜单列表</button>
                     </div>
                     <div id="result"></div>
+                `
+            },
+            rankings: {
+                title: '🎯 排行中心',
+                render: () => `
+                    <h2>🎯 排行中心</h2>
+                    <p style="color: #666; font-size: 13px; margin-bottom: 16px;">
+                        热门歌曲 + 神评论 + 24h 趋势 · LLM AI 评分识别高质量评论
+                    </p>
+                    <div class="tab-bar" style="margin-bottom: 20px;">
+                        <button class="tab-btn active" data-tab="hot-songs" onclick="switchRankTab('hot-songs')">🔥 热门歌曲</button>
+                        <button class="tab-btn" data-tab="hot-comments" onclick="switchRankTab('hot-comments')">💎 神评论</button>
+                        <button class="tab-btn" data-tab="trending" onclick="switchRankTab('trending')">⚡ 24h 趋势</button>
+                        <button class="tab-btn" data-tab="quality" onclick="switchRankTab('quality')">⭐ AI 高质量</button>
+                    </div>
+                    <div id="rankContent"></div>
                 `
             },
             random: {
@@ -1048,6 +1065,105 @@
                     `).join('')}
                 `;
             } catch (e) { toast('加载失败', 'error'); r.innerHTML = ''; }
+        }
+
+        // ==================== 排行中心 (9/4) ====================
+        async function switchRankTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            const btn = document.querySelector(`[data-tab="${tab}"]`);
+            if (btn) btn.classList.add('active');
+            const r = document.getElementById('rankContent');
+            r.innerHTML = '<p style="color: #999;">⏳ 加载中...</p>';
+            try {
+                if (tab === 'hot-songs') await loadHotSongs();
+                else if (tab === 'hot-comments') await loadHotComments();
+                else if (tab === 'trending') await loadTrending();
+                else if (tab === 'quality') await loadQuality();
+            } catch (e) { r.innerHTML = `<p style="color:#c20c0c;">❌ 加载失败: ${e.message}</p>`; }
+        }
+
+        async function loadHotSongs() {
+            const r = document.getElementById('rankContent');
+            const data = await api('/rankings/hot-songs', { period: 'all', limit: 20 });
+            if (!data.songs || data.songs.length === 0) {
+                r.innerHTML = '<p style="color:#999;">暂无热门歌曲数据, 请先爬取评论或等待热度统计</p>';
+                return;
+            }
+            r.innerHTML = `
+                <p style="color:#666;font-size:12px;margin-bottom:12px;">📊 按评论数 +点赞数综合排序 · 共 ${data.count} 首</p>
+                ${data.songs.map((s, i) => `
+                    <div class="song-card" onclick="loadSongDetail(${s.id})" style="cursor:pointer;">
+                        <div class="num" style="background:${i<3?'#c20c0c':'#999'};">${i+1}</div>
+                        <div class="info">
+                            <div class="name">${escapeHtml(s.name)}</div>
+                            <div class="meta">🎤 ${escapeHtml((s.artists || []).join(', '))} · 💬 ${s.comment_total || 0} 评论 · ❤️ ${(s.liked_total || 0).toLocaleString()} 赞</div>
+                        </div>
+                    </div>
+                `).join('')}
+            `;
+        }
+
+        async function loadHotComments() {
+            const r = document.getElementById('rankContent');
+            const data = await api('/rankings/hot-comments', { limit: 15 });
+            if (!data.comments || data.comments.length === 0) {
+                r.innerHTML = '<p style="color:#999;">暂无神评论数据</p>';
+                return;
+            }
+            r.innerHTML = `
+                <p style="color:#666;font-size:12px;margin-bottom:12px;">💎 按点赞数排序 · 共 ${data.count} 条</p>
+                ${data.comments.map((c, i) => `
+                    <div class="song-card" style="cursor:default;">
+                        <div class="num" style="background:${i<3?'#c20c0c':'#999'};">${i+1}</div>
+                        <div class="info">
+                            <div class="name" style="font-size:14px;">${escapeHtml((c.content || '').slice(0, 80))}${(c.content || '').length > 80 ? '...' : ''}</div>
+                            <div class="meta">🎵 ${escapeHtml(c.song_name || '')} · 👤 ${escapeHtml(c.user_nickname || '')} · ❤️ ${(c.liked_count || 0).toLocaleString()} 赞</div>
+                        </div>
+                    </div>
+                `).join('')}
+            `;
+        }
+
+        async function loadTrending() {
+            const r = document.getElementById('rankContent');
+            const data = await api('/rankings/trending', { hours: 24, limit: 15 });
+            if (!data.songs || data.songs.length === 0) {
+                r.innerHTML = '<p style="color:#999;">暂无 24h 趋势数据, 等待今日热度统计 (02:00)</p>';
+                return;
+            }
+            r.innerHTML = `
+                <p style="color:#666;font-size:12px;margin-bottom:12px;">⚡ 过去 24 小时热度增量 · 共 ${data.count} 首</p>
+                ${data.songs.map((s, i) => `
+                    <div class="song-card">
+                        <div class="num" style="background:${i<3?'#c20c0c':'#999'};">${i+1}</div>
+                        <div class="info">
+                            <div class="name">${escapeHtml(s.name)}</div>
+                            <div class="meta">🎤 ${escapeHtml((s.artists || []).join(', '))} · 📈 +${s.hot_increase || 0} 热度</div>
+                        </div>
+                    </div>
+                `).join('')}
+            `;
+        }
+
+        async function loadQuality() {
+            const r = document.getElementById('rankContent');
+            const data = await api('/comments/high-quality', { min_score: 4, limit: 15 });
+            if (!data.comments || data.comments.length === 0) {
+                r.innerHTML = '<p style="color:#999;">暂无 AI 高质量评论, 等待 LLM 评分</p>';
+                return;
+            }
+            r.innerHTML = `
+                <p style="color:#666;font-size:12px;margin-bottom:12px;">⭐ LLM AI 评分 ≥ 4 星 · 共 ${data.count} 条</p>
+                ${data.comments.map((c, i) => `
+                    <div class="song-card" style="cursor:default;">
+                        <div class="num" style="background:#9b59b6;font-size:18px;">${'⭐'.repeat(c.ai_score || 0)}</div>
+                        <div class="info">
+                            <div class="name" style="font-size:14px;">${escapeHtml((c.content || '').slice(0, 100))}${(c.content || '').length > 100 ? '...' : ''}</div>
+                            <div class="meta">🎵 ${escapeHtml(c.song_name || '')} · ${escapeHtml(c.ai_label || '')} · AI: ${escapeHtml(c.ai_reason || '')}</div>
+                        </div>
+                    </div>
+                `).join('')}
+            `;
         }
 
         async function loadToplists() {

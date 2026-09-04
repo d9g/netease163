@@ -29,6 +29,5 @@ songs.db
 songs.db-journal
 *.sqlite
 *.sqlite3
-docs/screenshots/
 *.db-journal
 *.db-wal
