@@ -1,8 +1,13 @@
 """
-东八区时间工具 - 老杨 9:30 修 S6 UTC 误判后抽出
+东八区时间工具 - 项目统一使用东八区时间 (北京时间)
 
-bidding-tool 已有同款: /root/bidding-tool/api/cst_time.py
-netease163 项目也需要统一时间, 复制同款逻辑
+原因: SQLite 的 CURRENT_TIMESTAMP 返回 UTC 时间, 跟北京时间差 8 小时,
+      排查问题时容易误判为"延迟采集"。
+
+设计:
+- 数据库写入/读取统一用东八区时间
+- 全局禁止 CURRENT_TIMESTAMP / datetime.now() 写入 DB
+- 所有时间相关代码用 now_cst() 获取东八区时间
 """
 from datetime import datetime, timedelta, timezone
 
@@ -21,5 +26,5 @@ def today_cst() -> str:
 
 
 def date_offset_cst(days: int = 0) -> str:
-    """返回东八区 ±N 天日期字符串 YYYY-MM-DD"""
+    """返回东八区 N 天前/后的日期字符串 YYYY-MM-DD"""
     return (now_cst() + timedelta(days=days)).strftime("%Y-%m-%d")

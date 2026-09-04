@@ -34,3 +34,4 @@ songs.db
 songs.db-journal
 *.sqlite
 *.sqlite3
+.env

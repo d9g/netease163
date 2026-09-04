@@ -1,22 +1,19 @@
 # netease163 — 网易云音乐爬虫服务
 
-**项目路径**：`/root/netease163/`
-**域名**：`http://163.d9g.com.cn/`
-
 借鉴两个老项目改造:
-- **163yinyue** (d9g/163yinyue) — 12 个爬虫模块 + sqlalchemy 存储
-- **NetCloud** (Lyrichu/NetCloud) — 登录模块 + 统一日志 + Helper 工具
+- **[163yinyue](https://github.com/d9g/163yinyue)** — 12 个爬虫模块 + sqlalchemy 存储
+- **[NetCloud](https://github.com/Lyrichu/NetCloud)** — 登录模块 + 统一日志 + Helper 工具
 
-底层使用 **pyncm** 库处理网易云 2020+ 加密接口 (避免自己维护加密/风控对抗)。
+底层使用 **[pyncm](https://github.com/greats3an/pyncm)** 库处理网易云 2020+ 加密接口（避免自己维护加密/风控对抗）。
 
+## ✨ 核心特性
 
-
-## 🌐 跟时间做朋友（v2 核心特性）
+### 🌐 跟时间做朋友（v2 爬虫策略）
 
 **问题**：早期爬虫"翻来覆去那 10 个歌手"——榜单 TopN 每日不变，关键词池 60 个太少。
 
 **方案**：
-- **crawl_priority 表**：按 (last_crawled_at, hot_score) 排序，**老的优先重爬，新歌补充**
+- **优先级队列**：按 `(last_crawled_at, hot_score)` 排序，**老的优先重爬，新歌补充**
 - **每天 100 首目标分配**：
   - 50% 重新更新（7 天前爬过的）—— 评论/点赞数变化
   - 30% 新歌（榜单 offset 滚动 + 关键词池扩展）
@@ -24,106 +21,127 @@
 - **凌晨 02:00 全量热度统计**
 - **跟时间做朋友**：每天 100 首覆盖"上个月没爬/上个月爬过但有新评论"的歌
 
-## 🎵 MusicBrainz 是什么？
+### 🤖 LLM 评论质量分析（v3）
 
-**MusicBrainz** 是**全球最大的开放音乐元数据库**（[musicbrainz.org](https://musicbrainz.org)）：
-- 类似"音乐界的维基百科"
-- 提供标准化的艺术家/专辑/歌曲元数据
-- 包含 **MBID**（唯一 ID）、流派、发行日期、ISRC 等
-- API 完全免费开源
+**痛点**：网易云评论里，70% 是"顶""好听""想家了"这种口水，但 5% 的高质量评论才真正是"神评论"。
 
-**对我们爬虫的价值**（v2 未来）：
-- 网易云歌曲 → 匹配 MusicBrainz → 拿到标准流派/年代
-- 用于"流派热度统计"（哪些流派最火）
-- 用于"年代热度趋势"（80/90/00 后的歌谁更火）
-- **不需要爬网易云自己的分类**（网易云分类乱）——用 MusicBrainz 标准化
+**方案**：
+- 批量提交给 LLM（25 条/批），按 0-5 星评分
+- **0-1 星**：口水（"顶"/"好听"/单字）
+- **2-3 星**：中等（表达感受但无深度）
+- **4-5 星**：高质量（有故事/情感深度/文采）
+- 自动回写 `comments.ai_score` / `ai_label` / `ai_reason`
+- **30 分钟自动调度**，每次分析 500 条评论
 
-## 📊 首页排行
+### 🎨 首页排行
 
-`http://163.d9g.com.cn/` 首页默认展示：
-- **🔥 热门歌曲**：按 comment_total DESC
-- **💬 神评论**：按 liked_count DESC
-- **📈 24h 趋势**：最近 24 小时热度增长最快
+3 个端点 + 1 个管理端点：
+- `/api/v1/rankings/hot-songs` — 热门歌曲（按评论数/点赞数）
+- `/api/v1/rankings/hot-comments` — 神评论（按点赞数）
+- `/api/v1/rankings/trending` — 24h 趋势（按评论增量）
+- `POST /api/v1/rankings/run-hot-stats` — 手动触发全量热度统计
 
-## 功能
+## 🛠️ 技术栈
 
-### 12 个爬虫 (借鉴 163yinyue)
-- 🎵 评论 (普通 + 热门)
-- 📝 歌词
-- 🎤 歌手信息
-- 📋 歌单 (含分类)
-- 📻 电台 (djradio)
-- 🏆 排行榜
-- 🔍 搜索 (歌曲/歌手/歌单/专辑)
-- 💿 专辑
+| 模块 | 技术 |
+|------|------|
+| 后端 | FastAPI + SQLAlchemy 2.0 + pyncm |
+| 前端 | 单页 WebUI（HTML + 原生 JS，无框架） |
+| 数据库 | SQLite（单文件） |
+| LLM | Anthropic 兼容 API（Claude Sonnet） |
+| 调度 | systemd service + 自定义 asyncio 循环 |
 
-### 服务能力 (新)
-- 🌐 **FastAPI HTTP 服务** (端口 9700) — REST API
-- 💾 **SQLite 存储** (默认) / MySQL (可选)
-- 🔐 **模拟登录** (借鉴 NetCloud) — 手机/邮箱/二维码
-- 🛠️ **CLI** (typer) — 命令行入口
+## 📦 部署
 
-## 快速开始
+### systemd 服务
+
+两个 unit 文件：
+- `netease163.service` — 主 API 服务（FastAPI 9700 端口）
+- `netease163-scheduler.service` — 自动调度（评论分析 + 爬虫轮询）
 
 ```bash
-# 1. 激活 venv (SOUL 铁律: 不放 /tmp)
-source /root/.netease163-venv/bin/activate
-
-# 2. CLI 模式
-python -m netease163.cli lyric --id 1062642
-python -m netease163.cli comment --id 1062642 --limit 10
-python -m netease163.cli search --q "林俊杰"
-
-# 4. 启动服务
-python -m netease163.api.app
-# 访问 http://127.0.0.1:9700/docs  (Swagger UI)
+systemctl daemon-reload
+systemctl enable --now netease163.service netease163-scheduler.service
 ```
 
-## API 示例
+### 配置文件
 
-```bash
-# 歌词
-curl http://127.0.0.1:9700/api/v1/lyric/1062642
-
-# 评论
-curl "http://127.0.0.1:9700/api/v1/comment/1062642?limit=10"
-
-# 搜索
-curl "http://127.0.0.1:9700/api/v1/search?q=林俊杰&limit=3"
-
-# 歌曲详情
-curl http://127.0.0.1:9700/api/v1/song/1062642
-
-# 歌单详情
-curl http://127.0.0.1:9700/api/v1/playlist/2438161637
+`.env`（**不要提交**）：
+```
+ANTHROPIC_API_KEY=<your-key>
 ```
 
-## 技术栈
+`ANTHROPIC_BASE_URL` 默认走 `https://api.minimaxi.com/anthropic` 兼容端点，可改为其他兼容 Anthropic 协议的端点。
 
-| 组件 | 选型 | 借鉴 |
-|---|---|---|
-| 网易云 API | **pyncm** (含加密) | — |
-| HTTP 客户端 | requests / httpx | — |
-| CLI | typer | argparse (163yinyue) |
-| 数据库 | SQLAlchemy + SQLite/MySQL | 163yinyue |
-| Web | FastAPI | 新增 |
-| 日志 | loguru | NetCloud Helper.get_logger |
-| 登录 | pyncm.login | NetCloud NetCloudLogin (简化) |
+### 目录结构
 
-## 跟原项目区别
+```
+netease163/
+├── netease163/
+│   ├── api/          # FastAPI 路由
+│   ├── ai/           # LLM 评论质量分析
+│   ├── spiders/      # 6 个爬虫模块 (song/comment/lyric/toplist/...)
+│   ├── random_crawler/  # 跟时间做朋友 爬虫策略
+│   ├── storage/      # SQLAlchemy 模型 + DB
+│   └── utils/        # 日志/Helper 工具
+├── webui/dist/       # 单页 WebUI 静态文件
+├── scripts/          # 调度器脚本
+├── data/             # SQLite DB + 日志
+└── docs/             # 文档 + 截图
+```
 
-| 项 | 163yinyue (原) | NetCloud (原) | netease163 (本项目) |
-|---|---|---|---|
-| 网易云 API | requests + 自写加密 | requests + pycrypto | **pyncm (内建加密)** |
-| 部署 | 纯 CLI | 库 + demo | **CLI + FastAPI** |
-| 存储 | MySQL 强制 | 本地文件 | **SQLite (默认) + MySQL** |
-| 登录 | ❌ | ✅ | ✅ (pyncm 简化) |
-| 依赖 | 3 个 | 7+ 个 | 8 个 (轻量) |
+## 📊 自动调度策略
 
-## 借鉴声明
+### 评论分析（30 分钟轮询）
 
-- 163yinyue: © d9g (老杨自己), GPL/自由使用
-- NetCloud: © lyrichu, GPL/自由使用
-- pyncm: © gnuacgn@github, MIT
+| 配置项 | 值 | 理由 |
+|--------|-----|------|
+| 间隔 | 30 分钟 | 避开 API 频率限制 |
+| 批量 | 25 条/批 | 单 prompt token 控制在 4k |
+| 每轮评论数 | 500 条 | 20 批 + 间隔 ≈ 30s 完成 |
+| 全天分析量 | ~24,000 条 | 48 次 × 500 |
+| LLM 调用频次 | ~50 次/天 | 1 次/批 + 元数据 |
 
-本项目仅作内部学习/工具用, 不对外发布。
+**风控安全**：单次 LLM 调用 ≈ 21 次 API（20 批 prompt + 1 metadata），30 分钟间隔 = 0.7 req/min，**远低于网易云 API 单 IP 1000 req/min 的限制**。
+
+### 爬虫调度（90 分钟轮询）
+
+| 配置项 | 值 | 理由 |
+|--------|-----|------|
+| 间隔 | 90 分钟 | 16 轮/天分散请求 |
+| 每轮目标 | 7 首 | 100 首/天 ÷ 14 轮（留 buffer） |
+| 跟时间做朋友分配 | 5 重爬 + 3 新歌 + 2 评论 | 50%/30%/20% |
+
+## 📈 数据模型（9 张表）
+
+- `songs` — 歌曲元数据（id/name/artists/album/pic_url）
+- `comments` — 评论（含 `ai_score`/`ai_label`/`ai_reason` AI 评分）
+- `lyrics` — 歌词
+- `playlists` / `playlist_songs` — 歌单
+- `artists` / `albums` — 歌手/专辑
+- `crawl_priority` — 爬虫优先级队列
+- `song_crawl_status` — 单曲爬取状态（last_crawled_at/crawl_count）
+- `song_hot_stats` — 每日热度统计
+- `keywords` — 关键词池（自扩展）
+- `crawl_log` — 爬取日志
+
+## 🎯 截图
+
+### 桌面端
+
+![WebUI Desktop](docs/screenshots/webui-desktop.png)
+
+### 移动端
+
+![WebUI Mobile](docs/screenshots/webui-mobile.png)
+
+## 🤝 贡献
+
+基于以下开源项目：
+- [163yinyue](https://github.com/d9g/163yinyue) (MIT)
+- [NetCloud](https://github.com/Lyrichu/NetCloud) (MIT)
+- [pyncm](https://github.com/greats3an/pyncm) (MIT)
+
+## 📄 License
+
+MIT

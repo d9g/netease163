@@ -56,7 +56,7 @@ class CommentAnalyzer:
         self.last_run_stats = {}
 
     def _default_llm_caller(self, prompt: str) -> str:
-        """默认 LLM 调用: 优先 Anthropic (跟 bidding-tool 一致), fallback OpenAI"""
+        """默认 LLM 调用: 优先 Anthropic (跟 Project Context 9/3 一致), fallback OpenAI"""
         import os
         import httpx
         # 优先 Anthropic
@@ -70,7 +70,7 @@ class CommentAnalyzer:
         raise ValueError("未配置 ANTHROPIC_API_KEY 或 OPENAI_API_KEY")
 
     def _call_anthropic(self, prompt: str, api_key: str) -> str:
-        """Anthropic 兼容 API (默认走 MiniMax minimax 兼容端点, 跟 bidding 一致)"""
+        """Anthropic 兼容 API (默认走 MiniMax minimax 兼容端点, 使用兼容协议)"""
         import os, httpx
         base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.minimaxi.com/anthropic")
         model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
