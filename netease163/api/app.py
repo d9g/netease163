@@ -15,7 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select, func, desc
 
 from netease163.spiders import (
     LyricSpider, CommentSpider, SearchSpider, SongSpider,
@@ -676,3 +676,184 @@ def api_trigger_comment_crawl(song_id: int, max_count: int = Query(100, ge=10, l
         "target_max_count": max_count,
         "thread_alive": thread.is_alive(),
     }
+
+
+# ==================== 首页排行 (9/4 老杨要求) ====================
+@app.get("/api/v1/rankings/hot-songs", tags=["排行"])
+def api_hot_songs(
+    period: str = Query("week", description="all/week/month"),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """热门歌曲排行 - 按 comment_total + 点赞总数"""
+    from netease163.storage.db import get_session
+    from netease163.storage.models import Song
+    from sqlalchemy import select, desc
+    from netease163.storage.models import Comment
+    session = get_session()
+    try:
+        # 真实数据: 聚合 comments 表 (歌的评论数 + 点赞总数)
+        stmt = (
+            select(
+                Song.id, Song.name, Song.artists, Song.album_name, Song.pic_url,
+                func.count(Comment.id).label("real_comment_count"),
+                func.coalesce(func.sum(Comment.liked_count), 0).label("liked_total"),
+            )
+            .outerjoin(Comment, Comment.song_id == Song.id)
+            .group_by(Song.id, Song.name, Song.artists, Song.album_name, Song.pic_url)
+            .having(func.count(Comment.id) > 0)
+            .order_by(desc(func.count(Comment.id)))
+            .limit(limit)
+        )
+        rows = session.execute(stmt).all()
+        return {
+            "period": period,
+            "count": len(rows),
+            "songs": [
+                {
+                    "rank": i + 1,
+                    "id": r[0],
+                    "name": r[1],
+                    "artists": r[2] or [],
+                    "album_name": r[3],
+                    "comment_total": int(r[5] or 0),  # 真实评论数
+                    "liked_total": int(r[6] or 0),
+                    "pic_url": r[4],
+                }
+                for i, r in enumerate(rows)
+            ],
+        }
+    finally:
+        session.close()
+
+
+@app.get("/api/v1/rankings/hot-comments", tags=["排行"])
+def api_hot_comments(limit: int = Query(20, ge=1, le=100)):
+    """神评论排行 - 按 liked_count"""
+    from netease163.storage.db import get_session
+    from netease163.storage.models import Comment, Song
+    from sqlalchemy import select, desc
+    session = get_session()
+    try:
+        stmt = (
+            select(Comment, Song.name)
+            .join(Song, Song.id == Comment.song_id)
+            .where(Comment.liked_count > 0)
+            .order_by(desc(Comment.liked_count))
+            .limit(limit)
+        )
+        rows = session.execute(stmt).all()
+        return {
+            "count": len(rows),
+            "comments": [
+                {
+                    "rank": i + 1,
+                    "comment_id": r[0].comment_id,
+                    "song_id": r[0].song_id,
+                    "song_name": r[1],
+                    "user_nickname": r[0].user_nickname,
+                    "content": r[0].content[:200] if r[0].content else "",
+                    "liked_count": r[0].liked_count or 0,
+                }
+                for i, r in enumerate(rows)
+            ],
+        }
+    finally:
+        session.close()
+
+
+@app.get("/api/v1/rankings/trending", tags=["排行"])
+def api_trending(period: str = Query("24h", description="24h/7d"), limit: int = Query(20, ge=1, le=100)):
+    """24h / 7d 趋势 - 热度增长最快"""
+    from netease163.storage.db import get_session
+    from netease163.storage.models import SongHotStats, Song
+    from sqlalchemy import select, desc
+    from datetime import datetime, timedelta
+    session = get_session()
+    try:
+        if period == "7d":
+            cutoff = (datetime.now() - timedelta(days=7)).isoformat()
+        else:
+            cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
+        stmt = (
+            select(SongHotStats, Song)
+            .join(Song, Song.id == SongHotStats.song_id)
+            .where(SongHotStats.stat_date >= cutoff, SongHotStats.delta_24h > 0)
+            .order_by(desc(SongHotStats.delta_24h))
+            .limit(limit)
+        )
+        rows = session.execute(stmt).all()
+        return {
+            "period": period,
+            "count": len(rows),
+            "trending": [
+                {
+                    "rank": i + 1,
+                    "song_id": r[1].id,
+                    "song_name": r[1].name,
+                    "artists": r[1].artists or [],
+                    "hot_score": r[0].hot_score,
+                    "delta_24h": r[0].delta_24h,
+                    "comment_total": r[0].comment_total,
+                }
+                for i, r in enumerate(rows)
+            ],
+        }
+    except Exception as e:
+        # 表可能没数据
+        return {"period": period, "count": 0, "trending": [], "note": f"暂无数据（每日 02:00 跑热度统计）: {e}"}
+    finally:
+        session.close()
+
+
+@app.post("/api/v1/admin/run-hot-stats", tags=["排行"])
+def api_run_hot_stats():
+    """管理员触发：立即跑全量热度统计（默认 02:00 跑）"""
+    from netease163.storage.db import get_session
+    from netease163.storage.models import Song, Comment, SongHotStats
+    from sqlalchemy import select, func, desc, desc
+    from datetime import datetime
+    from netease163.api.cst_time import now_cst
+    session = get_session()
+    try:
+        today = now_cst().replace(hour=2, minute=0, second=0, microsecond=0)
+        # 算每首歌的热度
+        stmt = (
+            select(
+                Song.id,
+                Song.comment_total,
+                func.coalesce(func.sum(Comment.liked_count), 0).label("liked_total"),
+            )
+            .outerjoin(Comment, Comment.song_id == Song.id)
+            .group_by(Song.id, Song.comment_total)
+            .order_by(desc(Song.comment_total))
+            .limit(500)
+        )
+        rows = session.execute(stmt).all()
+        inserted = 0
+        for i, r in enumerate(rows):
+            song_id, comment_total, liked_total = r[0], r[1] or 0, r[2] or 0
+            hot_score = comment_total * 10 + int(liked_total) * 5
+            # 查上一次分数
+            prev = session.execute(
+                select(SongHotStats.hot_score)
+                .where(SongHotStats.song_id == song_id)
+                .order_by(desc(SongHotStats.stat_date))
+                .limit(1)
+            ).scalar()
+            prev_score = prev or 0
+            delta = hot_score - prev_score
+            session.add(SongHotStats(
+                song_id=song_id,
+                stat_date=today,
+                comment_total=comment_total,
+                liked_total=int(liked_total),
+                hot_score=hot_score,
+                rank_24h=i + 1,
+                prev_hot_score=prev_score,
+                delta_24h=delta,
+            ))
+            inserted += 1
+        session.commit()
+        return {"success": True, "inserted": inserted, "stat_date": today.isoformat()}
+    finally:
+        session.close()

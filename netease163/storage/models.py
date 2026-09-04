@@ -123,3 +123,41 @@ class CrawlLog(Base):
     error_msg = Column(Text)
     duration_ms = Column(Integer, default=0)
     crawled_at = Column(DateTime, default=now_cst, index=True)
+
+
+# ==================== 跟时间做朋友 (9/4 老杨要求) ====================
+class SongCrawlStatus(Base):
+    """歌曲爬取状态 - 跟时间做朋友核心表"""
+    __tablename__ = "song_crawl_status"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    song_id = Column(Integer, nullable=False, unique=True, index=True)
+    last_crawled_at = Column(DateTime, default=now_cst, index=True)  # 上次爬详情时间
+    last_comment_crawled_at = Column(DateTime)  # 上次爬评论时间
+    crawl_count = Column(Integer, default=0)  # 爬过几次
+    comment_crawl_count = Column(Integer, default=0)  # 评论爬过几次
+    is_priority = Column(Integer, default=0, index=True)  # 1=优先重爬
+    
+    __table_args__ = (
+        Index("idx_scs_priority_time", "is_priority", "last_crawled_at"),
+    )
+
+
+class SongHotStats(Base):
+    """歌曲热度统计 - 每日 02:00 全量跑"""
+    __tablename__ = "song_hot_stats"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    song_id = Column(Integer, nullable=False, index=True)
+    stat_date = Column(DateTime, nullable=False, index=True)  # 统计日期
+    comment_total = Column(Integer, default=0)
+    liked_total = Column(Integer, default=0)  # 所有评论点赞总数
+    hot_score = Column(Integer, default=0)  # 热度分 (comment*10 + liked*5)
+    rank_24h = Column(Integer, default=0)  # 24h 排名
+    prev_hot_score = Column(Integer, default=0)  # 上一次分数
+    delta_24h = Column(Integer, default=0)  # 24h 增量
+    
+    __table_args__ = (
+        Index("idx_shs_date_score", "stat_date", "hot_score"),
+        Index("idx_shs_date_delta", "stat_date", "delta_24h"),
+    )
