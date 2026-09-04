@@ -56,14 +56,49 @@ class CommentAnalyzer:
         self.last_run_stats = {}
 
     def _default_llm_caller(self, prompt: str) -> str:
-        """默认 LLM 调用: OpenAI 兼容 (从 .env 读 OPENAI_API_KEY)"""
+        """默认 LLM 调用: 优先 Anthropic (跟 bidding-tool 一致), fallback OpenAI"""
         import os
         import httpx
+        # 优先 Anthropic
+        anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
+        if anthropic_key:
+            return self._call_anthropic(prompt, anthropic_key)
+        # Fallback OpenAI
         api_key = os.environ.get("OPENAI_API_KEY", "")
+        if api_key:
+            return self._call_openai(prompt, api_key)
+        raise ValueError("未配置 ANTHROPIC_API_KEY 或 OPENAI_API_KEY")
+
+    def _call_anthropic(self, prompt: str, api_key: str) -> str:
+        """Anthropic 兼容 API (默认走 MiniMax minimax 兼容端点, 跟 bidding 一致)"""
+        import os, httpx
+        base_url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.minimaxi.com/anthropic")
+        model = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
+        with httpx.Client(timeout=60.0) as client:
+            resp = client.post(
+                f"{base_url}/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": 4096,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.3,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            self.total_cost_tokens += data.get("usage", {}).get("output_tokens", 0) * 5 + data.get("usage", {}).get("input_tokens", 0)
+            return data["content"][0]["text"]
+
+    def _call_openai(self, prompt: str, api_key: str) -> str:
+        """OpenAI 兼容 API"""
+        import httpx
         base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
         model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY 未配置")
         with httpx.Client(timeout=60.0) as client:
             resp = client.post(
                 f"{base_url}/chat/completions",
