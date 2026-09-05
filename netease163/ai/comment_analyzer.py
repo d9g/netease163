@@ -368,9 +368,17 @@ class CommentAnalyzer:
         session = get_session()
         try:
             # 找未评分的评论 (审计 #6 修复: 拉 comment_id + song_id 用于准确回写)
+            # 2026-09-06 补充: 老 prompt 评过分但 ai_emotion 为空的也要重评 (用新 prompt)
+            from sqlalchemy import or_
             stmt = (
                 select(Comment.id, Comment.comment_id, Comment.song_id, Comment.content, Comment.liked_count)
-                .where(Comment.ai_score == -1)
+                .where(
+                    or_(
+                        Comment.ai_score == -1,
+                        Comment.ai_emotion.is_(None),
+                        Comment.ai_emotion == "",
+                    )
+                )
                 .where(Comment.content.isnot(None))
                 .where(Comment.content != "")
             )
