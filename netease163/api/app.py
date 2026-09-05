@@ -47,6 +47,10 @@ class CommentItem(BaseModel):
     ai_score: int = -1
     ai_label: str = ""
     ai_reason: str = ""
+    # 2026-09-05 情感标签扩展 (老杨 14:22 反馈)
+    ai_emotion: str = ""
+    ai_emotion_intensity: str = ""
+    ai_emotion_keywords: str = ""
 
 
 class CommentResponse(BaseModel):
@@ -232,19 +236,34 @@ def get_comment(
     if result is None:
         raise HTTPException(404, "评论获取失败")
 
-    # 从本地 DB 查 ai_score (按 comment_id 匹配)
+    # 从本地 DB 查 ai_score + emotion (按 comment_id 匹配)
     from netease163.storage.db import get_session
     from netease163.storage.models import Comment as CommentModel
     session = get_session()
     try:
-        # 拿这歌的所有 ai_score (按 comment_id)
+        # 拿这歌的所有 ai_score + emotion (按 comment_id)
         db_scores = {}
         rows = session.execute(
-            select(CommentModel.comment_id, CommentModel.ai_score, CommentModel.ai_label, CommentModel.ai_reason)
+            select(
+                CommentModel.comment_id,
+                CommentModel.ai_score,
+                CommentModel.ai_label,
+                CommentModel.ai_reason,
+                CommentModel.ai_emotion,
+                CommentModel.ai_emotion_intensity,
+                CommentModel.ai_emotion_keywords,
+            )
             .where(CommentModel.song_id == song_id)
         ).all()
         for r in rows:
-            db_scores[r[0]] = {"ai_score": r[1], "ai_label": r[2], "ai_reason": r[3]}
+            db_scores[r[0]] = {
+                "ai_score": r[1],
+                "ai_label": r[2],
+                "ai_reason": r[3],
+                "ai_emotion": r[4] or "",
+                "ai_emotion_intensity": r[5] or "",
+                "ai_emotion_keywords": r[6] or "",
+            }
     finally:
         session.close()
 
@@ -256,6 +275,9 @@ def get_comment(
             c["ai_score"] = score_info.get("ai_score", -1)
             c["ai_label"] = score_info.get("ai_label", "")
             c["ai_reason"] = score_info.get("ai_reason", "")
+            c["ai_emotion"] = score_info.get("ai_emotion", "")
+            c["ai_emotion_intensity"] = score_info.get("ai_emotion_intensity", "")
+            c["ai_emotion_keywords"] = score_info.get("ai_emotion_keywords", "")
             if hide_zero and c["ai_score"] == 0:
                 continue  # 跳过口水评论
             out.append(c)
@@ -432,6 +454,150 @@ def api_my_playlists(limit: int = Query(30, ge=1, le=100)):
     except Exception as e:
         raise HTTPException(500, str(e))
 
+
+
+# ==================== 评论搜索 (老杨 14:22 反馈) ====================
+from pydantic import BaseModel
+from typing import Optional
+
+
+class CommentSearchItem(BaseModel):
+    comment_id: int
+    song_id: int
+    song_name: str = ""
+    artist_name: str = ""
+    user_nickname: str = ""
+    content: str
+    liked_count: int = 0
+    comment_time: int = 0
+    ai_score: int = -1
+    ai_label: str = ""
+    ai_emotion: str = ""
+    ai_emotion_intensity: str = ""
+    ai_emotion_keywords: str = ""
+
+
+class CommentSearchResponse(BaseModel):
+    emotion: Optional[str] = None
+    keyword: Optional[str] = None
+    min_liked: int = 0
+    min_score: int = -1
+    total: int
+    items: List[CommentSearchItem]
+
+
+@app.get("/api/v1/comments/search", response_model=CommentSearchResponse, tags=["评论搜索"])
+def search_comments(
+    emotion: Optional[str] = Query(None, description="情感标签: 感动/怀旧/幸福/忧伤/思念/励志/释然/治愈/孤独/友情/爱情/亲情/愤怒/失望/兴奋/高兴/浪漫/迷茫/故事/回忆杀/岁月/远方/梦想/人生/时间/成长"),
+    keyword: Optional[str] = Query(None, description="关键词搜索 (命中 content / emotion_keywords)"),
+    min_liked: int = Query(0, ge=0, description="最低点赞数"),
+    min_score: int = Query(-1, ge=-1, le=5, description="最低 AI 评分 (-1=不限制, 0-5=最少几星)"),
+    song_id: Optional[int] = Query(None, description="限定某首歌"),
+    limit: int = Query(50, ge=1, le=200, description="返回条数"),
+    offset: int = Query(0, ge=0, description="分页偏移"),
+):
+    """按情感标签 / 关键词 / 点赞数 / 评分 检索评论 (老杨 14:22 反馈)
+
+    示例:
+    - /api/v1/comments/search?emotion=思念&min_liked=100
+    - /api/v1/comments/search?keyword=雨声&min_score=4
+    - /api/v1/comments/search?emotion=感动&min_score=5&limit=20
+    """
+    from netease163.storage.db import get_session
+    from netease163.storage.models import Comment, Song
+    from sqlalchemy import or_, and_
+
+    session = get_session()
+    try:
+        q = session.query(Comment, Song).outerjoin(Song, Comment.song_id == Song.id)
+        conditions = []
+        if emotion:
+            conditions.append(Comment.ai_emotion == emotion)
+        if keyword:
+            like_pat = f"%{keyword}%"
+            conditions.append(
+                or_(
+                    Comment.content.like(like_pat),
+                    Comment.ai_emotion_keywords.like(like_pat),
+                )
+            )
+        if min_liked > 0:
+            conditions.append(Comment.liked_count >= min_liked)
+        if min_score >= 0:
+            conditions.append(Comment.ai_score >= min_score)
+        if song_id is not None:
+            conditions.append(Comment.song_id == song_id)
+        if conditions:
+            q = q.filter(and_(*conditions))
+
+        total = q.count()
+        rows = (
+            q.order_by(Comment.liked_count.desc(), Comment.ai_score.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+        items = []
+        for c, s in rows:
+            # artists 是 JSON: [{id, name}, ...]
+            artist_name = ""
+            if s and s.artists:
+                if isinstance(s.artists, list) and s.artists:
+                    first = s.artists[0]
+                    if isinstance(first, dict):
+                        artist_name = first.get("name", "")
+                    else:
+                        artist_name = str(first)
+            items.append({
+                "comment_id": c.comment_id or 0,
+                "song_id": c.song_id,
+                "song_name": s.name if s else "",
+                "artist_name": artist_name,
+                "user_nickname": c.user_nickname or "",
+                "content": c.content or "",
+                "liked_count": c.liked_count or 0,
+                "comment_time": c.comment_time or 0,
+                "ai_score": c.ai_score if c.ai_score is not None else -1,
+                "ai_label": c.ai_label or "",
+                "ai_emotion": c.ai_emotion or "",
+                "ai_emotion_intensity": c.ai_emotion_intensity or "",
+                "ai_emotion_keywords": c.ai_emotion_keywords or "",
+            })
+        return CommentSearchResponse(
+            emotion=emotion,
+            keyword=keyword,
+            min_liked=min_liked,
+            min_score=min_score,
+            total=total,
+            items=items,
+        )
+    finally:
+        session.close()
+
+
+@app.get("/api/v1/comments/emotions", tags=["评论搜索"])
+def list_emotions():
+    """列出所有有情感标签的评论分布统计 (供 webui 下拉筛选)"""
+    from netease163.storage.db import get_session
+    from netease163.storage.models import Comment
+    from sqlalchemy import func
+    session = get_session()
+    try:
+        rows = (
+            session.query(Comment.ai_emotion, func.count(Comment.id))
+            .filter(Comment.ai_emotion.isnot(None))
+            .filter(Comment.ai_emotion != "")
+            .group_by(Comment.ai_emotion)
+            .order_by(func.count(Comment.id).desc())
+            .all()
+        )
+        return {
+            "total": len(rows),
+            "emotions": [{"name": r[0], "count": r[1]} for r in rows],
+        }
+    finally:
+        session.close()
 
 
 # ==================== 随机爬取 (后台调度) ====================
