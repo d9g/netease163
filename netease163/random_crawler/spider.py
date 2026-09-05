@@ -211,28 +211,57 @@ class RandomCrawler:
             session.close()
 
     def _save_comments(self, song_id: int, comments: List[Dict]) -> int:
-        """保存评论 (去重)"""
+        """保存评论 (upsert by (song_id, comment_id) - 审计 #7 修复)
+
+        不再用 merge (按主键 id 匹配导致重复), 改用:
+        - 先查该 (song_id, comment_id) 是否存在
+        - 存在 → 更新 content/liked_count/comment_time/crawled_at
+        - 不存在 → 新增
+        - ai_score 等 LLM 评分字段保留 (不重置)
+        """
         if not comments:
             return 0
         session = get_session()
-        saved = 0
+        inserted = 0
+        updated = 0
         try:
             for c in comments:
-                # pyncm 返回: comment_id / user.nickname / content / likedCount / time
-                comment = Comment(
-                    comment_id=c.get("comment_id", 0),
-                    song_id=song_id,
-                    user_nickname=c.get("user", c.get("user_nickname", "")),
-                    content=c.get("content", ""),
-                    liked_count=c.get("liked_count", c.get("likedCount", 0)),
-                    comment_time=c.get("comment_time", c.get("time", 0)),
-                    is_hot=1 if c.get("is_hot") else 0,
-                )
-                session.merge(comment)
-                saved += 1
+                comment_id = c.get("comment_id", 0)
+                if not comment_id:
+                    continue  # 没有 comment_id 的跳过
+                # 查已存在
+                existing = session.execute(
+                    select(Comment).where(
+                        Comment.song_id == song_id,
+                        Comment.comment_id == comment_id,
+                    )
+                ).scalar_one_or_none()
+                if existing:
+                    # 更新
+                    existing.content = c.get("content", existing.content)
+                    existing.user_nickname = c.get("user", c.get("user_nickname", existing.user_nickname))
+                    existing.liked_count = c.get("liked_count", c.get("likedCount", existing.liked_count))
+                    existing.comment_time = c.get("comment_time", c.get("time", existing.comment_time))
+                    existing.is_hot = 1 if c.get("is_hot") else existing.is_hot
+                    existing.crawled_at = now_cst()
+                    # ai_* 保留, 不动
+                    updated += 1
+                else:
+                    # 新增
+                    comment = Comment(
+                        comment_id=comment_id,
+                        song_id=song_id,
+                        user_nickname=c.get("user", c.get("user_nickname", "")),
+                        content=c.get("content", ""),
+                        liked_count=c.get("liked_count", c.get("likedCount", 0)),
+                        comment_time=c.get("comment_time", c.get("time", 0)),
+                        is_hot=1 if c.get("is_hot") else 0,
+                    )
+                    session.add(comment)
+                    inserted += 1
             session.commit()
-            logger.info(f"💾 入库评论: song={song_id}, 新增 {saved} 条")
-            return saved
+            logger.info(f"💾 入库评论: song={song_id}, 新增 {inserted} + 更新 {updated} = {inserted + updated} 条")
+            return inserted + updated
         except Exception as e:
             logger.error(f"❌ 入库评论失败: {e}")
             session.rollback()

@@ -33,10 +33,10 @@ PROMPT_TEMPLATE = """你是网易云音乐评论质量分析专家。请对以�
 - 2-3 星: 中等评论 (表达感受但无深度/故事, 如 "好听到哭", "想家了", "上头了")
 - 4-5 星: 高质量评论 (有故事/有情感深度/有见解/有文采, ≥30字且言之有物)
 
-请严格按 JSON 数组返回, 每条评论对应一个对象:
-[{{"id": 1, "score": 4, "label": "高质量", "reason": "作者讲述母亲去世的真情实感"}}, ...]
+请严格按 JSON 数组返回, 每条评论对应一个对象, **必须使用以下列表中的真实 comment_id** (不要重新编号!):
+[{{"comment_id": {sample_ids}, "score": 4, "label": "高质量", "reason": "..."}}, ...]
 
-评论列表:
+评论列表 (id=comment_id, song_id=song_id):
 {comments_json}
 
 只返回 JSON 数组, 不要其他文字。"""
@@ -117,13 +117,16 @@ class CommentAnalyzer:
             return data["choices"][0]["message"]["content"]
 
     def _build_prompt(self, comments: List[Dict]) -> str:
-        """构造 prompt"""
+        """构造 prompt (审计 #6 修复: 使用真实 comment_id 而非序号)"""
         items = [
-            {"id": i + 1, "content": c["content"][:300], "liked": c.get("liked_count", 0)}
-            for i, c in enumerate(comments)
+            {"id": c["comment_id"], "song_id": c["song_id"], "content": c["content"][:300], "liked": c.get("liked_count", 0)}
+            for c in comments
         ]
+        # 给 LLM 示例 comment_id (从本批取前 3 个)
+        sample_ids = ", ".join(str(c["comment_id"]) for c in comments[:3])
         return PROMPT_TEMPLATE.format(
             n=len(comments),
+            sample_ids=sample_ids,
             comments_json=json.dumps(items, ensure_ascii=False, indent=2),
         )
 
@@ -168,9 +171,10 @@ class CommentAnalyzer:
         return "中等"
 
     def analyze_batch(self, comments: List[Dict]) -> List[Dict]:
-        """分析一批评论 (同步)
+        """分析一批评论 (同步, 审计 #6 修复: 按 comment_id 匹配回写)
+
         Args:
-            comments: [{"id": db_id, "content": "...", "liked_count": 0}, ...]
+            comments: [{"id": db_id, "comment_id": 网易云id, "song_id": ..., "content": "...", "liked_count": 0}, ...]
         Returns:
             [{"id": db_id, "score": 4, "label": "高质量", "reason": "..."}, ...]
         """
@@ -183,16 +187,26 @@ class CommentAnalyzer:
             logger.error(f"❌ LLM 调用失败: {e}")
             return []
         results = self._parse_response(response, len(comments))
-        # 合并
+
+        # 按 comment_id 建字典 (审计 #6: 不再用位置 i 映射, 按真实 comment_id 匹配)
+        comments_by_cid = {c["comment_id"]: c for c in comments if c.get("comment_id")}
         out = []
-        for i, r in enumerate(results):
-            if i < len(comments):
+        matched = 0
+        for r in results:
+            cid = r.get("comment_id") or r.get("id")  # 兼容老 prompt
+            if cid and cid in comments_by_cid:
+                src = comments_by_cid[cid]
                 out.append({
-                    "id": comments[i]["id"],
+                    "id": src["id"],
                     "score": r["score"],
                     "label": r["label"],
                     "reason": r["reason"],
                 })
+                matched += 1
+            else:
+                logger.warning(f"⚠️ LLM 返回的 comment_id={cid} 不在批内, 丢弃")
+        if matched < len(comments):
+            logger.warning(f"⚠️ LLM 返回 {len(results)} 条, 匹配 {matched}/{len(comments)} 条")
         return out
 
     def analyze_pending(self, limit: int = 100, min_liked: int = 0) -> Dict:
@@ -207,9 +221,9 @@ class CommentAnalyzer:
         from ..api.cst_time import now_cst
         session = get_session()
         try:
-            # 找未评分的评论
+            # 找未评分的评论 (审计 #6 修复: 拉 comment_id + song_id 用于准确回写)
             stmt = (
-                select(Comment.id, Comment.content, Comment.liked_count)
+                select(Comment.id, Comment.comment_id, Comment.song_id, Comment.content, Comment.liked_count)
                 .where(Comment.ai_score == -1)
                 .where(Comment.content.isnot(None))
                 .where(Comment.content != "")
@@ -226,7 +240,7 @@ class CommentAnalyzer:
         n_batches = 0
         for i in range(0, len(rows), BATCH_SIZE):
             batch = [
-                {"id": r[0], "content": r[1], "liked_count": r[2] or 0}
+                {"id": r[0], "comment_id": r[1], "song_id": r[2], "content": r[3], "liked_count": r[4] or 0}
                 for r in rows[i:i + BATCH_SIZE]
             ]
             logger.info(f"🤖 分析批 {n_batches + 1}: {len(batch)} 条评论")

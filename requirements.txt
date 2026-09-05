@@ -15,3 +15,17 @@ pydantic>=2.0.0       # 数据校验
 # 工具
 python-dotenv>=1.0.0  # .env 加载
 loguru>=0.7.0         # 日志 (借鉴 NetCloud Helper.get_logger)
+beautifulsoup4>=4.12.0  # HTML 解析 (lyric / search 爬虫)
+
+# 调度 + 异步
+APScheduler>=3.10.0   # 定时任务 (scheduler.py + scripts/auto_scheduler.py)
+
+# LLM / AI 分析
+httpx>=0.25.0         # LLM 调用 (comment_analyzer.py 用)
+
+# 登录 / 二维码
+qrcode>=7.4.0         # 扫码登录 (login.py)
+pillow>=10.0.0        # 二维码图片生成
+
+# 加密 (登录态加密存储)
+pycryptodome>=3.19.0

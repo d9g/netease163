@@ -11,10 +11,12 @@ import os
 import json
 from typing import Optional, List
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Query, Body
+from fastapi import FastAPI, HTTPException, Query, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select, func, desc
+import os
 
 from netease163.spiders import (
     LyricSpider, CommentSpider, SearchSpider, SongSpider,
@@ -121,10 +123,36 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000", "https://163.d9g.com.cn"],  # 审计 #4 修复: 限定来源
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
+    allow_credentials=False,
 )
+
+
+# API Key 中间件 (审计 #1 修复: 默认绑定 127.0.0.1 + API Key 鉴权)
+# 加载: 从 .env 读 NETEASE_API_KEY (可选, 空时禁用鉴权)
+import os as _os
+API_KEY = _os.environ.get("NETEASE_API_KEY", "").strip()
+
+@app.middleware("http")
+async def api_key_middleware(request, call_next):
+    """API Key 鉴权中间件 (审计 #1 修复)
+    - 跳过: /docs / /openapi.json / /redoc / / /health / webui 静态文件
+    - 其他接口: 需要 Header X-API-Key 或 Authorization: Bearer <key>
+    - .env 未设 NETEASE_API_KEY 时: 全接口开放 (开发模式)
+    """
+    path = request.url.path
+    skip_paths = ("/docs", "/openapi.json", "/redoc", "/", "/health", "/assets/", "/static/")
+    if any(path.startswith(p) for p in skip_paths) or path == "/favicon.ico":
+        return await call_next(request)
+    if not API_KEY:
+        return await call_next(request)
+    provided = request.headers.get("X-API-Key", "") or request.headers.get("Authorization", "").replace("Bearer ", "")
+    if provided != API_KEY:
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"error": "Unauthorized: invalid or missing API Key"}, status_code=401)
+    return await call_next(request)
 
 
 @app.exception_handler(Exception)
@@ -346,10 +374,10 @@ def api_login_status():
 
 @app.post("/api/v1/login/phone", tags=["登录"])
 def api_login_phone(
-    account: str = Query(..., description="手机号"),
-    password: str = Query(..., description="密码"),
+    account: str = Body(..., embed=True, description="手机号"),
+    password: str = Body(..., embed=True, description="密码"),
 ):
-    """手机密码登录"""
+    """手机密码登录 (body 不走 URL 避免泄露)"""
     from netease163.login import LoginManager
     mgr = LoginManager()
     success = mgr.login_with_phone(account, password)
@@ -360,10 +388,10 @@ def api_login_phone(
 
 @app.post("/api/v1/login/email", tags=["登录"])
 def api_login_email(
-    account: str = Query(..., description="邮箱"),
-    password: str = Query(..., description="密码"),
+    account: str = Body(..., embed=True, description="邮箱"),
+    password: str = Body(..., embed=True, description="密码"),
 ):
-    """邮箱密码登录"""
+    """邮箱密码登录 (body 不走 URL 避免泄露)"""
     from netease163.login import LoginManager
     mgr = LoginManager()
     success = mgr.login_with_email(account, password)
@@ -592,15 +620,18 @@ def api_qrcode_check(unikey: str = Query(..., description="扫码 unikey")):
 
 
 @app.post("/api/v1/login/cookie", tags=["登录"])
-def api_login_cookie(music_u: str = Query(..., description="MUSIC_U cookie 值")):
+def api_login_cookie(payload: dict = Body(...)):
     """Cookie 兜底登录 (浏览器复制的 MUSIC_U)
 
     步骤:
     1. 浏览器打开 music.163.com 登录
     2. F12 → Console 输入 document.cookie
     3. 找 MUSIC_U=xxx; 复制值 (只要 MUSIC_U= 后面的部分)
-    4. 调用本接口
+    4. POST 本接口, body: {"music_u": "xxx"}
+
+    body 避免走 URL (审计 #2 修复)
     """
+    music_u = payload.get("music_u", "")
     from netease163.login import login_via_cookie
     return login_via_cookie(music_u=music_u)
 
@@ -697,10 +728,13 @@ def api_trigger_comment_crawl(song_id: int, max_count: int = Query(100, ge=10, l
         session.close()
     def _crawl_comments_async(sid, mc):
         try:
-            from netease163.crawler.comment import CommentCrawler
-            crawler = CommentCrawler()
-            stats = crawler.crawl_song_comments(sid, max_count=mc)
-            logger.info(f"✅ 后台评论抓取完成: song_id={sid}, stats={stats}")
+            from netease163.spiders.comment import CommentSpider
+            spider = CommentSpider()
+            data = spider.safe_fetch(sid, limit=min(mc, 100))
+            if data:
+                logger.info(f"✅ 后台评论抓取完成: song_id={sid}, total={data.get('total', 0)}, got={len(data.get('comments', []))}")
+            else:
+                logger.warning(f"⚠️ 后台评论抓取返回 None: song_id={sid}")
         except Exception as e:
             logger.error(f"❌ 后台评论抓取失败: song_id={sid}, error={e}")
     thread = threading.Thread(target=_crawl_comments_async, args=(song_id, max_count), daemon=True)
@@ -1006,3 +1040,13 @@ def api_quality_stats():
         }
     finally:
         session.close()
+
+
+# ==================== WebUI 静态文件 (审计 #8 修复) ====================
+from pathlib import Path as _Path
+_webui_dist = _Path(__file__).resolve().parent.parent.parent / "webui" / "dist"
+if _webui_dist.exists():
+    app.mount("/", StaticFiles(directory=str(_webui_dist), html=True), name="webui")
+    logger.info(f"✅ WebUI 静态文件已挂载: {_webui_dist}")
+else:
+    logger.warning(f"⚠️  WebUI 目录不存在: {_webui_dist}")

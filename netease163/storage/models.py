@@ -5,7 +5,7 @@ SQLAlchemy 2.0 风格, 9 张表
 from datetime import datetime
 from ..api.cst_time import now_cst
 from sqlalchemy import (
-    Column, Integer, String, Text, DateTime, Index, JSON,
+    Column, Integer, String, Text, DateTime, Index, JSON, UniqueConstraint,
 )
 from .db import Base
 
@@ -91,6 +91,8 @@ class Comment(Base):
     ai_analyzed_at = Column(DateTime)  # AI 分析时间
 
     __table_args__ = (
+        # (song_id, comment_id) 唯一 → 修复 #7 评论去重失效 (老杨 9/5)
+        UniqueConstraint("song_id", "comment_id", name="uq_comments_song_comment"),
         Index("idx_comments_song_time", "song_id", "comment_time"),
         Index("idx_comments_ai_score", "ai_score", "liked_count"),
     )
