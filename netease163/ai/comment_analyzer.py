@@ -25,16 +25,33 @@ AI_SCORE_THRESHOLDS = {
     "中等": (2, 3),
     "高质量": (4, 5),
 }
-PROMPT_TEMPLATE = """你是网易云音乐评论质量分析专家。请对以下 {n} 条评论按 0-5 星评分:
+PROMPT_TEMPLATE = """你是网易云音乐评论质量分析专家。请对以下 {n} 条评论同时输出 **质量分 (0-5)** 和 **情感标签 (1-3 个, 从列表选)** + **强度** + **触发关键词**。
 
-评分标准:
+=== 质量分 (0-5 星) ===
 - 0 星: 完全口水 (单字/单表情/无意义反复, 如 "顶", "哈哈哈", "哥", "啊啊啊", "路过", "💗")
 - 1 星: 基本口水 (口语化、无深度的感叹, 如 "好听", "支持", "喜欢", "哭了", "笑死")
 - 2-3 星: 中等评论 (表达感受但无深度/故事, 如 "好听到哭", "想家了", "上头了")
 - 4-5 星: 高质量评论 (有故事/有情感深度/有见解/有文采, ≥30字且言之有物)
 
+=== 情感标签 (8 大类 + 10 社会 + 8 场景, 详见文档 PLAN_2026-09-05_netease163.md) ===
+
+一级情感 (8 个, 必须选 1):
+感动 / 怀旧 / 幸福 / 忧伤 / 思念 / 励志 / 释然 / 治愈
+
+二级社会情感 (10 个, 可选 1):
+孤独 / 友情 / 爱情 / 亲情 / 愤怒 / 失望 / 兴奋 / 高兴 / 浪漫 / 迷茫
+
+三级场景标签 (8 个, 可选 1):
+故事 / 回忆杀 / 岁月 / 远方 / 梦想 / 人生 / 时间 / 成长
+
+强度修饰: "深" (强烈) / "浅" (轻微) / "" (默认空)
+
+=== 返回格式 ===
 请严格按 JSON 数组返回, 每条评论对应一个对象, **必须使用以下列表中的真实 comment_id** (不要重新编号!):
-[{{"comment_id": {sample_ids}, "score": 4, "label": "高质量", "reason": "..."}}, ...]
+例: [{{"comment_id": 1234567, "score": 5, "label": "高质量", "reason": "深夜听到泪目", "emotion": "感动", "emotion_intensity": "深", "emotion_keywords": "深夜, 泪, 想家"}}, {{"comment_id": 2345678, "score": 1, "label": "口水", "reason": "...", "emotion": "高兴", "emotion_intensity": "浅", "emotion_keywords": "好听"}}]
+
+本批可用 comment_id 列表 (必须复用下面列表中的 id):
+{sample_ids_json}
 
 评论列表 (id=comment_id, song_id=song_id):
 {comments_json}
@@ -122,27 +139,33 @@ class CommentAnalyzer:
             {"id": c["comment_id"], "song_id": c["song_id"], "content": c["content"][:300], "liked": c.get("liked_count", 0)}
             for c in comments
         ]
-        # 给 LLM 示例 comment_id (从本批取前 3 个)
-        sample_ids = ", ".join(str(c["comment_id"]) for c in comments[:3])
+        # 2026-09-05 修复: sample_ids_json 是合法 JSON 数组 (带引号) 让 LLM 模仿格式
+        sample_ids_json = json.dumps([c["comment_id"] for c in comments[:3]], ensure_ascii=False)
         return PROMPT_TEMPLATE.format(
             n=len(comments),
-            sample_ids=sample_ids,
+            sample_ids_json=sample_ids_json,
             comments_json=json.dumps(items, ensure_ascii=False, indent=2),
         )
 
     def _parse_response(self, response: str, n_expected: int) -> List[Dict]:
-        """解析 LLM 返回的 JSON"""
+        """解析 LLM 返回的 JSON (2026-09-05 增强容错: 处理被截断的 JSON)"""
         # 有时 LLM 返回带 ```json``` 包裹
         response = response.strip()
         if response.startswith("```"):
             response = response.split("```")[1]
             if response.startswith("json"):
                 response = response[4:]
+        # 尝试完整解析
+        result = None
         try:
             result = json.loads(response)
         except json.JSONDecodeError as e:
-            logger.error(f"❌ JSON 解析失败: {e}, response 前 200: {response[:200]}")
-            return []
+            # 2026-09-05 容错: 被截断时尝试提取已闭合的项
+            logger.warning(f"⚠️ JSON 解析失败 ({e}), 尝试提取部分...")
+            result = self._extract_partial_json(response)
+            if not result:
+                logger.error(f"❌ JSON 部分提取也失败, 返回空")
+                return []
         if isinstance(result, dict) and "data" in result:
             result = result["data"]
         if not isinstance(result, list):
@@ -154,14 +177,72 @@ class CommentAnalyzer:
             if isinstance(item, dict) and "score" in item:
                 try:
                     score = max(0, min(5, int(item["score"])))
+                    emotion = str(item.get("emotion", ""))[:30] or None
+                    emotion_intensity = str(item.get("emotion_intensity", ""))[:10] or None
+                    emotion_keywords = str(item.get("emotion_keywords", ""))[:200] or None
+                    # 2026-09-05 修复: 必须返回 comment_id 才能让 analyze_batch 匹配回写
                     valid.append({
+                        "comment_id": item.get("comment_id"),  # 保留网易云 comment id
                         "score": score,
                         "label": item.get("label", self._score_to_label(score)),
                         "reason": str(item.get("reason", ""))[:200],
+                        "emotion": emotion,
+                        "emotion_intensity": emotion_intensity,
+                        "emotion_keywords": emotion_keywords,
                     })
                 except (ValueError, TypeError):
                     continue
         return valid
+
+    def _extract_partial_json(self, text: str) -> List[Dict]:
+        """从被截断的 JSON 里提取已闭合的项 (2026-09-05 容错)
+
+        策略: 用 regex 提取所有完备的 {...} 对象 (避免在未闭合字符串中反向扫描的复杂逻辑)
+        """
+        import re
+        # 允许嵌套但跳过未闭合的: 使用 bracketed match
+        # 更简单: 从左到右找所有 '{...}' 完整对象
+        results = []
+        i = 0
+        while True:
+            start = text.find('{', i)
+            if start < 0:
+                break
+            # 扫这个 { 后面到平衡点
+            depth = 1
+            in_str = False
+            escape = False
+            j = start + 1
+            while j < len(text) and depth > 0:
+                ch = text[j]
+                if escape:
+                    escape = False
+                    j += 1
+                    continue
+                if ch == '\\' and in_str:
+                    escape = True
+                    j += 1
+                    continue
+                if ch == '"':
+                    in_str = not in_str
+                elif not in_str:
+                    if ch == '{':
+                        depth += 1
+                    elif ch == '}':
+                        depth -= 1
+                j += 1
+            if depth == 0:
+                # 找到一个闭合对象
+                try:
+                    obj = json.loads(text[start:j])
+                    results.append(obj)
+                except json.JSONDecodeError:
+                    pass
+                i = j
+            else:
+                # 未闭合, 中止
+                break
+        return results
 
     def _score_to_label(self, score: int) -> str:
         """0-5 星转 label"""
@@ -176,7 +257,7 @@ class CommentAnalyzer:
         Args:
             comments: [{"id": db_id, "comment_id": 网易云id, "song_id": ..., "content": "...", "liked_count": 0}, ...]
         Returns:
-            [{"id": db_id, "score": 4, "label": "高质量", "reason": "..."}, ...]
+            [{"id": db_id, "score": 4, "label": "高质量", "reason": "...", "emotion": "感动", "emotion_intensity": "深", "emotion_keywords": "雨, 思念"}, ...]
         """
         if not comments:
             return []
@@ -201,6 +282,9 @@ class CommentAnalyzer:
                     "score": r["score"],
                     "label": r["label"],
                     "reason": r["reason"],
+                    "emotion": r.get("emotion"),
+                    "emotion_intensity": r.get("emotion_intensity"),
+                    "emotion_keywords": r.get("emotion_keywords"),
                 })
                 matched += 1
             else:
@@ -261,6 +345,9 @@ class CommentAnalyzer:
                     c.ai_score = r["score"]
                     c.ai_label = r["label"]
                     c.ai_reason = r["reason"]
+                    c.ai_emotion = r.get("emotion")
+                    c.ai_emotion_intensity = r.get("emotion_intensity")
+                    c.ai_emotion_keywords = r.get("emotion_keywords")
                     c.ai_analyzed_at = now
                     analyzed += 1
             session.commit()

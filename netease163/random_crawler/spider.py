@@ -26,6 +26,8 @@ from ..spiders.comment import CommentSpider
 from ..spiders.toplist import ToplistSpider
 from ..utils import get_logger
 from .keywords import get_keyword_pool
+# 2026-09-05 修复: spider.py 行 250 _save_comments 里 now_cst() 未定义 (估计是一直被 try/except 吞了)
+from ..api.cst_time import now_cst
 
 logger = get_logger("netease163.random")
 
@@ -150,6 +152,71 @@ class RandomCrawler:
         finally:
             session.close()
 
+    def _get_uncompleted_songs(self, limit: int) -> List[Dict]:
+        """2026-09-05 断点续传: 选全量未完成的歌
+
+        优先级 (依次 fallback):
+        1. 已知 comment_total > 0 且 offset < total (已首爬, 需要续) - 优先 (热门, 必定有评论)
+        2. offset == 0 (从未首爬) - 作为后备
+        """
+        from ..storage.models import SongCrawlStatus
+        from sqlalchemy import desc
+        session = get_session()
+        try:
+            # 优先: 已知 total 且 未完成
+            # 2026-09-05 修复: 用 SongCrawlStatus.comment_total (不是 Song.comment_total)
+            stmt1 = (
+                select(Song.id, Song.name,
+                       SongCrawlStatus.comment_total,
+                       SongCrawlStatus.last_comment_offset,
+                       SongCrawlStatus.comments_completed)
+                .join(SongCrawlStatus, SongCrawlStatus.song_id == Song.id)
+                .where(SongCrawlStatus.comments_completed == 0)
+                .where(SongCrawlStatus.comment_total > 0)
+                .where(SongCrawlStatus.last_comment_offset < SongCrawlStatus.comment_total)
+                .order_by(desc(SongCrawlStatus.comment_total))
+                .limit(limit)
+            )
+            rows = session.execute(stmt1).all()
+            if rows:
+                return [
+                    {
+                        "song_id": r[0], "name": r[1],
+                        "comment_total": r[2] or 0,
+                        "last_comment_offset": r[3] or 0,
+                        "comments_completed": r[4] or 0,
+                    }
+                    for r in rows
+                ]
+            # 后备: offset=0 未首爬 (但可能 total=0 是没评论的歌)
+            stmt2 = (
+                select(Song.id, Song.name,
+                       SongCrawlStatus.comment_total,
+                       SongCrawlStatus.last_comment_offset,
+                       SongCrawlStatus.comments_completed)
+                .join(SongCrawlStatus, SongCrawlStatus.song_id == Song.id)
+                .where(SongCrawlStatus.comments_completed == 0)
+                .where(SongCrawlStatus.last_comment_offset == 0)
+                .where(SongCrawlStatus.comment_total > 0)  # 排除 total=0 (可能无评论)
+                .order_by(desc(SongCrawlStatus.comment_total))
+                .limit(limit)
+            )
+            rows = session.execute(stmt2).all()
+            return [
+                {
+                    "song_id": r[0], "name": r[1],
+                    "comment_total": r[2] or 0,
+                    "last_comment_offset": r[3] or 0,
+                    "comments_completed": r[4] or 0,
+                }
+                for r in rows
+            ]
+        except Exception as e:
+            logger.warning(f"⚠️  查 uncompleted 目标失败: {e}")
+            return []
+        finally:
+            session.close()
+
     def _mark_song_crawled(self, song_id: int, comment_crawled: bool = False):
         """记录 song 爬取状态"""
         from datetime import datetime
@@ -210,7 +277,7 @@ class RandomCrawler:
         finally:
             session.close()
 
-    def _save_comments(self, song_id: int, comments: List[Dict]) -> int:
+    def _save_comments(self, song_id: int, comments: List[Dict], is_hot: bool = False) -> int:
         """保存评论 (upsert by (song_id, comment_id) - 审计 #7 修复)
 
         不再用 merge (按主键 id 匹配导致重复), 改用:
@@ -259,7 +326,7 @@ class RandomCrawler:
                         content=c.get("content", ""),
                         liked_count=c.get("liked_count", c.get("likedCount", 0)),
                         comment_time=c.get("comment_time", c.get("time", 0)),
-                        is_hot=1 if c.get("is_hot") else 0,
+                        is_hot=1 if (c.get("is_hot") or is_hot) else 0,
                     )
                     session.add(comment)
                     inserted += 1
@@ -349,21 +416,164 @@ class RandomCrawler:
                 self._log_crawl("SearchSpider", 0, False, str(e))
         return songs
 
-    def _fetch_comments_for_song(self, song_id: int) -> int:
-        """拉一首的评论"""
+    def _fetch_comments_for_song(self, song_id: int, full_crawl: bool = False) -> int:
+        """拉一首的评论 (2026-09-05 老杨反馈重写)
+
+        设计:
+        - full_crawl=False (默认) 增量: 拉最新一页 (offset=0, limit=100), 不动 offset 状态
+        - full_crawl=True 全量: 断点续传, 从 last_comment_offset 开始分页爬到 total 为止
+        - hot_comments 一次性爬 (不分页, 15 条固定)
+        - (song_id, comment_id) UNIQUE 防止重复
+
+        返回: 本次实际新增条数 (inserted)
+        """
         try:
+            from datetime import datetime
+            from ..storage.models import SongCrawlStatus
+            from sqlalchemy import select
+            # 查当前爬取状态
+            session = get_session()
+            try:
+                stmt = select(SongCrawlStatus).where(SongCrawlStatus.song_id == song_id)
+                status = session.execute(stmt).scalar_one_or_none()
+                if status is None:
+                    status = SongCrawlStatus(song_id=song_id)
+                    session.add(status)
+                    session.commit()
+                # 准备状态
+                last_offset = status.last_comment_offset or 0
+                completed = bool(status.comments_completed)
+                comment_total = status.comment_total or 0
+            finally:
+                session.close()
+
+            # 分页参数
+            PAGE_SIZE = 100  # 网易云 max
+            total_saved_this_run = 0
+
+            # 1. hot_comments 一次性 (永远爬, 每次都同步入库)
             t0 = time.time()
-            result = self.comment_spider.fetch(song_id=song_id, limit=20)
-            duration = int((time.time() - t0) * 1000)
-            if result:
-                comments = result.get("comments", []) + result.get("hot_comments", [])
-                saved = self._save_comments(song_id, comments)
-                self._log_crawl("CommentSpider", song_id, True, "", duration)
-                return saved
+            hot_result = self.comment_spider.fetch(song_id=song_id, limit=1, offset=0, hot_only=True)
+            duration_hot = int((time.time() - t0) * 1000)
+            if hot_result and hot_result.get("hot_comments"):
+                saved_hot = self._save_comments(song_id, hot_result["hot_comments"], is_hot=True)
+                total_saved_this_run += saved_hot
+                self._log_crawl("CommentSpider.hot", song_id, True, "", duration_hot)
+
+            # 2. 增量模式 (默认)
+            if not full_crawl:
+                # 拉最新一页 (offset=0)
+                t0 = time.time()
+                result = self.comment_spider.fetch(song_id=song_id, limit=PAGE_SIZE, offset=0)
+                duration = int((time.time() - t0) * 1000)
+                if result:
+                    # 拿 total 同步入库 (不是 completed 也能拿)
+                    if not comment_total and result.get("total"):
+                        comment_total = result["total"]
+                        self._update_status_field(song_id, "comment_total", comment_total)
+                    saved = self._save_comments(song_id, result.get("comments", []))
+                    total_saved_this_run += saved
+                    self._log_crawl("CommentSpider", song_id, True, "", duration)
+                return total_saved_this_run
+
+            # 3. 全量模式 + 断点续传
+            # 拿 total (如果还不知)
+            if not comment_total:
+                t0 = time.time()
+                first = self.comment_spider.fetch(song_id=song_id, limit=1, offset=0)
+                duration_first = int((time.time() - t0) * 1000)
+                if first and first.get("total"):
+                    comment_total = first["total"]
+                    self._update_status_field(song_id, "comment_total", comment_total)
+                self._log_crawl("CommentSpider.first", song_id, True, "", duration_first)
+                if comment_total == 0:
+                    # 没评论的歌, 标记完成
+                    self._update_status_field(song_id, "comments_completed", 1)
+                    self._update_status_field(song_id, "comments_completed_at", "now_cst")
+                    return total_saved_this_run
+
+            # 分页爬 (从 last_offset 到 total)
+            MAX_PAGES_PER_RUN = 5  # 一次最多爬 5 页 (5*100=500 条/次, 防反爬)
+            pages_done = 0
+            current_offset = last_offset
+            while pages_done < MAX_PAGES_PER_RUN and current_offset < comment_total:
+                t0 = time.time()
+                result = self.comment_spider.fetch(
+                    song_id=song_id, limit=PAGE_SIZE, offset=current_offset
+                )
+                duration = int((time.time() - t0) * 1000)
+                if not result:
+                    break
+                page_comments = result.get("comments", [])
+                if not page_comments:
+                    # 这一页空了, 标记完成
+                    break
+                saved = self._save_comments(song_id, page_comments)
+                total_saved_this_run += saved
+                self._log_crawl(
+                    "CommentSpider",
+                    song_id, True,
+                    f"offset={current_offset} total={comment_total}",
+                    duration,
+                )
+                current_offset += PAGE_SIZE
+                pages_done += 1
+                # 限速 (单页间隔)
+                if current_offset < comment_total and pages_done < MAX_PAGES_PER_RUN:
+                    random_sleep()
+                # 预判下一页会空 → 提前标记完成
+                if len(page_comments) < PAGE_SIZE:
+                    break
+
+            # 4. 更新爬取状态
+            self._update_status_field(song_id, "last_comment_offset", current_offset)
+            self._update_status_field(song_id, "comment_crawl_count", "inc")  # +1
+            # 判断是否完成
+            if current_offset >= comment_total:
+                self._update_status_field(song_id, "comments_completed", 1)
+                self._update_status_field(song_id, "comments_completed_at", "now_cst")
+            return total_saved_this_run
         except Exception as e:
             logger.warning(f"⚠️  song={song_id} 评论拉取失败: {e}")
             self._log_crawl("CommentSpider", song_id, False, str(e))
         return 0
+
+    def _update_status_field(self, song_id: int, field: str, value):
+        """更新 song_crawl_status 单个字段 (避免 重新加载整个状态)
+
+        value: int / str(虚拟值 "now_cst" 表示 datetime.now())
+        """
+        from datetime import datetime
+        from sqlalchemy import update
+        from ..storage.models import SongCrawlStatus
+        from ..api.cst_time import now_cst
+        session = get_session()
+        try:
+            if value == "now_cst":
+                value = now_cst()
+            elif value == "inc":
+                # 自增, 单独 query
+                stmt = select(SongCrawlStatus).where(SongCrawlStatus.song_id == song_id)
+                row = session.execute(stmt).scalar_one_or_none()
+                if row:
+                    row.comment_crawl_count = (row.comment_crawl_count or 0) + 1
+                    session.commit()
+                return
+            else:
+                # 确保 row 存在
+                stmt = select(SongCrawlStatus).where(SongCrawlStatus.song_id == song_id)
+                row = session.execute(stmt).scalar_one_or_none()
+                if row is None:
+                    row = SongCrawlStatus(song_id=song_id, **{field: value})
+                    session.add(row)
+                else:
+                    setattr(row, field, value)
+                session.commit()
+        except Exception as e:
+            logger.warning(f"⚠️  更新状态字段 {field}={value} 失败: {e}")
+            session.rollback()
+        finally:
+            session.close()
 
     def run_one_round(self) -> Dict[str, int]:
         """跑一轮: 跟时间做朋友 () 
@@ -409,6 +619,19 @@ class RandomCrawler:
         for t in comment_targets:
             song_id = t["song_id"]
             comments_saved = self._fetch_comments_for_song(song_id)
+            stats["comment_inc"] += comments_saved
+            stats["comments_new"] += comments_saved
+            self._mark_song_crawled(song_id, comment_crawled=True)
+            random_sleep()
+
+        # 4. 全量爬 1 首未完成评论的歌 (2026-09-05 断点续传)
+        #    断点续传: 从 last_comment_offset 爬到 comment_total
+        #    防反爬: 一次轮只 1 首 (5-10 页 × 8-25s 间隔 = 40-250s)
+        uncompleted = self._get_uncompleted_songs(limit=1)
+        for t in uncompleted:
+            song_id = t["song_id"]
+            logger.info(f"🎯 全量爬 song={song_id} (offset={t.get('last_comment_offset')}/{t.get('comment_total')})")
+            comments_saved = self._fetch_comments_for_song(song_id, full_crawl=True)
             stats["comment_inc"] += comments_saved
             stats["comments_new"] += comments_saved
             self._mark_song_crawled(song_id, comment_crawled=True)

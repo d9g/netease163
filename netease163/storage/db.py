@@ -69,3 +69,30 @@ def init_db():
         Lyric, SearchLog, CrawlLog,
     )
     Base.metadata.create_all(get_engine())
+    # 2026-09-05 老杨反馈: 评论入库 bug + 情感标签 + 断点续传
+    # Base.metadata.create_all 不会动已存在的表, 需手动补字段
+    _run_migrations()
+
+
+def _run_migrations():
+    """手动 ALTER TABLE 迁移 (轻量级, 不引 alembic)"""
+    from sqlalchemy import inspect, text
+    engine = get_engine()
+    with engine.connect() as conn:
+        # 1. comments 表 加 3 个情感字段 + emotion索引
+        cols = {c["name"] for c in inspect(engine).get_columns("comments")}
+        if "ai_emotion" not in cols:
+            conn.execute(text("ALTER TABLE comments ADD COLUMN ai_emotion VARCHAR(30)"))
+            conn.execute(text("ALTER TABLE comments ADD COLUMN ai_emotion_intensity VARCHAR(10)"))
+            conn.execute(text("ALTER TABLE comments ADD COLUMN ai_emotion_keywords VARCHAR(200)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_comments_ai_emotion ON comments (ai_emotion)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_comments_emotion ON comments (ai_emotion, liked_count)"))
+        # 2. song_crawl_status 表 加 4 个断点续传字段
+        cols = {c["name"] for c in inspect(engine).get_columns("song_crawl_status")}
+        if "last_comment_offset" not in cols:
+            conn.execute(text("ALTER TABLE song_crawl_status ADD COLUMN last_comment_offset INTEGER DEFAULT 0"))
+            conn.execute(text("ALTER TABLE song_crawl_status ADD COLUMN comment_total INTEGER DEFAULT 0"))
+            conn.execute(text("ALTER TABLE song_crawl_status ADD COLUMN comments_completed INTEGER DEFAULT 0"))
+            conn.execute(text("ALTER TABLE song_crawl_status ADD COLUMN comments_completed_at DATETIME"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_scs_completed_time ON song_crawl_status (comments_completed, last_comment_crawled_at)"))
+        conn.commit()
