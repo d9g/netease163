@@ -226,7 +226,11 @@ class RandomCrawler:
         updated = 0
         try:
             for c in comments:
-                comment_id = c.get("comment_id", 0)
+                # 2026-09-05 老杨反馈 https://163.d9g.com.cn/ 评论数不涨:
+                # CommentSpider.fetch() 返回的 dict 用 "id" 字段, 但 ORM 用 "comment_id",
+                # 导致 _save_comments 拿不到 comment_id → 全部 continue 跳过.
+                # 根因修复: 加 "id" 兑底, 同时保留 "comment_id" 以防其他调用方依赖
+                comment_id = c.get("comment_id") or c.get("id") or 0
                 if not comment_id:
                     continue  # 没有 comment_id 的跳过
                 # 查已存在
