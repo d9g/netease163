@@ -79,14 +79,18 @@ def _run_migrations():
     from sqlalchemy import inspect, text
     engine = get_engine()
     with engine.connect() as conn:
-        # 1. comments 表 加 3 个情感字段 + emotion索引
+        # 1. comments 表 加 4 个情感字段 + emotion索引
         cols = {c["name"] for c in inspect(engine).get_columns("comments")}
         if "ai_emotion" not in cols:
             conn.execute(text("ALTER TABLE comments ADD COLUMN ai_emotion VARCHAR(30)"))
+            conn.execute(text("ALTER TABLE comments ADD COLUMN ai_emotion_secondary VARCHAR(30)"))
             conn.execute(text("ALTER TABLE comments ADD COLUMN ai_emotion_intensity VARCHAR(10)"))
             conn.execute(text("ALTER TABLE comments ADD COLUMN ai_emotion_keywords VARCHAR(200)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_comments_ai_emotion ON comments (ai_emotion)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_comments_emotion ON comments (ai_emotion, liked_count)"))
+        # 1.1 comments 单独加 emotion_secondary (如已升级过老库跳这步)
+        elif "ai_emotion_secondary" not in cols:
+            conn.execute(text("ALTER TABLE comments ADD COLUMN ai_emotion_secondary VARCHAR(30)"))
         # 2. song_crawl_status 表 加 4 个断点续传字段
         cols = {c["name"] for c in inspect(engine).get_columns("song_crawl_status")}
         if "last_comment_offset" not in cols:

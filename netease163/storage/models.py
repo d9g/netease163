@@ -92,6 +92,7 @@ class Comment(Base):
     # 2026-09-05 情感标签扩展 (老杨 14:22 反馈):
     # 26 标签体系 详见 PLAN_2026-09-05_netease163.md
     ai_emotion = Column(String(30), index=True)  # 主标签 "感动" / "忧伤" / "幸福" 等
+    ai_emotion_secondary = Column(String(30))  # 辅标签 (复杂情绪时填, 例 "感动 + 孤独")
     ai_emotion_intensity = Column(String(10))  # 强度 "深" / "浅" / ""
     ai_emotion_keywords = Column(String(200))  # 触发关键词 (例 "雨, 思念, 远方")
 

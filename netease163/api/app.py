@@ -49,6 +49,7 @@ class CommentItem(BaseModel):
     ai_reason: str = ""
     # 2026-09-05 情感标签扩展 (老杨 14:22 反馈)
     ai_emotion: str = ""
+    ai_emotion_secondary: str = ""
     ai_emotion_intensity: str = ""
     ai_emotion_keywords: str = ""
 
@@ -250,6 +251,7 @@ def get_comment(
                 CommentModel.ai_label,
                 CommentModel.ai_reason,
                 CommentModel.ai_emotion,
+                CommentModel.ai_emotion_secondary,
                 CommentModel.ai_emotion_intensity,
                 CommentModel.ai_emotion_keywords,
             )
@@ -261,8 +263,9 @@ def get_comment(
                 "ai_label": r[2],
                 "ai_reason": r[3],
                 "ai_emotion": r[4] or "",
-                "ai_emotion_intensity": r[5] or "",
-                "ai_emotion_keywords": r[6] or "",
+                "ai_emotion_secondary": r[5] or "",
+                "ai_emotion_intensity": r[6] or "",
+                "ai_emotion_keywords": r[7] or "",
             }
     finally:
         session.close()
@@ -276,6 +279,7 @@ def get_comment(
             c["ai_label"] = score_info.get("ai_label", "")
             c["ai_reason"] = score_info.get("ai_reason", "")
             c["ai_emotion"] = score_info.get("ai_emotion", "")
+            c["ai_emotion_secondary"] = score_info.get("ai_emotion_secondary", "")
             c["ai_emotion_intensity"] = score_info.get("ai_emotion_intensity", "")
             c["ai_emotion_keywords"] = score_info.get("ai_emotion_keywords", "")
             if hide_zero and c["ai_score"] == 0:
@@ -473,6 +477,7 @@ class CommentSearchItem(BaseModel):
     ai_score: int = -1
     ai_label: str = ""
     ai_emotion: str = ""
+    ai_emotion_secondary: str = ""
     ai_emotion_intensity: str = ""
     ai_emotion_keywords: str = ""
 
@@ -561,6 +566,7 @@ def search_comments(
                 "ai_score": c.ai_score if c.ai_score is not None else -1,
                 "ai_label": c.ai_label or "",
                 "ai_emotion": c.ai_emotion or "",
+                "ai_emotion_secondary": c.ai_emotion_secondary or "",
                 "ai_emotion_intensity": c.ai_emotion_intensity or "",
                 "ai_emotion_keywords": c.ai_emotion_keywords or "",
             })

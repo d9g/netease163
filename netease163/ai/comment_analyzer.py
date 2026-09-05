@@ -8,6 +8,7 @@
 - 增量: 只分析未评分的评论 (ai_score = -1)
 """
 import json
+import re
 import time
 import threading
 from typing import List, Dict, Optional
@@ -20,12 +21,22 @@ logger = get_logger("netease163.ai")
 
 # ==================== 配置 ====================
 BATCH_SIZE = 25  # 每批 25 条评论 (单次 prompt ~ 4000 tokens)
+
+# 2026-09-06 严格白名单: LLM 只能从这 26 个标签里选, 其他的丢弃
+ALLOWED_EMOTIONS = {
+    # 一级情感 (8)
+    "感动", "怀旧", "幸福", "忧伤", "思念", "励志", "释然", "治愈",
+    # 二级社会情感 (10)
+    "孤独", "友情", "爱情", "亲情", "愤怒", "失望", "兴奋", "高兴", "浪漫", "迷茫",
+    # 三级场景标签 (8)
+    "故事", "回忆杀", "岁月", "远方", "梦想", "人生", "时间", "成长",
+}
 AI_SCORE_THRESHOLDS = {
     "口水": (0, 1),
     "中等": (2, 3),
     "高质量": (4, 5),
 }
-PROMPT_TEMPLATE = """你是网易云音乐评论质量分析专家。请对以下 {n} 条评论同时输出 **质量分 (0-5)** 和 **情感标签 (1-3 个, 从列表选)** + **强度** + **触发关键词**。
+PROMPT_TEMPLATE = """你是网易云音乐评论质量分析专家。请对以下 {n} 条评论同时输出 **质量分 (0-5)** 和 **情感标签 (1 个主 + 1 个辅) ** + **强度** + **触发关键词**。
 
 === 质量分 (0-5 星) ===
 - 0 星: 完全口水 (单字/单表情/无意义反复, 如 "顶", "哈哈哈", "哥", "啊啊啊", "路过", "💗")
@@ -33,22 +44,47 @@ PROMPT_TEMPLATE = """你是网易云音乐评论质量分析专家。请对以�
 - 2-3 星: 中等评论 (表达感受但无深度/故事, 如 "好听到哭", "想家了", "上头了")
 - 4-5 星: 高质量评论 (有故事/有情感深度/有见解/有文采, ≥30字且言之有物)
 
-=== 情感标签 (8 大类 + 10 社会 + 8 场景, 详见文档 PLAN_2026-09-05_netease163.md) ===
+=== 情感标签体系 (2026-09-05 严格输出, 不要逗号合并) ===
 
-一级情感 (8 个, 必须选 1):
+**重要: emotion 必须是上述列表中**严格 1 个**标签, 不要输出 "思念, 爱情" 这种多个标签**
+复杂情绪 (1 主 + 1 辅): 如 "思念 + 爱情", 则 emotion="思念", emotion_secondary="爱情"
+如只是单一情绪: emotion="思念", emotion_secondary=""
+
+一级情感 (8 个, 选 1 作主标签):
 感动 / 怀旧 / 幸福 / 忧伤 / 思念 / 励志 / 释然 / 治愈
 
-二级社会情感 (10 个, 可选 1):
+二级社会情感 (10 个, 可作主/辅):
 孤独 / 友情 / 爱情 / 亲情 / 愤怒 / 失望 / 兴奋 / 高兴 / 浪漫 / 迷茫
 
-三级场景标签 (8 个, 可选 1):
+三级场景标签 (8 个, 可作主/辅):
 故事 / 回忆杀 / 岁月 / 远方 / 梦想 / 人生 / 时间 / 成长
 
 强度修饰: "深" (强烈) / "浅" (轻微) / "" (默认空)
 
 === 返回格式 ===
 请严格按 JSON 数组返回, 每条评论对应一个对象, **必须使用以下列表中的真实 comment_id** (不要重新编号!):
-例: [{{"comment_id": 1234567, "score": 5, "label": "高质量", "reason": "深夜听到泪目", "emotion": "感动", "emotion_intensity": "深", "emotion_keywords": "深夜, 泪, 想家"}}, {{"comment_id": 2345678, "score": 1, "label": "口水", "reason": "...", "emotion": "高兴", "emotion_intensity": "浅", "emotion_keywords": "好听"}}]
+例: [
+  {{
+    "comment_id": 1234567,
+    "score": 5,
+    "label": "高质量",
+    "reason": "深夜听到泪目",
+    "emotion": "感动",
+    "emotion_secondary": "孤独",
+    "emotion_intensity": "深",
+    "emotion_keywords": "深夜, 泪, 想家"
+  }},
+  {{
+    "comment_id": 2345678,
+    "score": 1,
+    "label": "口水",
+    "reason": "...",
+    "emotion": "高兴",
+    "emotion_secondary": "",
+    "emotion_intensity": "浅",
+    "emotion_keywords": "好听"
+  }}
+]
 
 本批可用 comment_id 列表 (必须复用下面列表中的 id):
 {sample_ids_json}
@@ -177,7 +213,7 @@ class CommentAnalyzer:
             if isinstance(item, dict) and "score" in item:
                 try:
                     score = max(0, min(5, int(item["score"])))
-                    emotion = str(item.get("emotion", ""))[:30] or None
+                    emotion, emotion_secondary = self._normalize_emotion(item.get("emotion", ""), item.get("emotion_secondary", ""))
                     emotion_intensity = str(item.get("emotion_intensity", ""))[:10] or None
                     emotion_keywords = str(item.get("emotion_keywords", ""))[:200] or None
                     # 2026-09-05 修复: 必须返回 comment_id 才能让 analyze_batch 匹配回写
@@ -187,12 +223,38 @@ class CommentAnalyzer:
                         "label": item.get("label", self._score_to_label(score)),
                         "reason": str(item.get("reason", ""))[:200],
                         "emotion": emotion,
+                        "emotion_secondary": emotion_secondary,
                         "emotion_intensity": emotion_intensity,
                         "emotion_keywords": emotion_keywords,
                     })
                 except (ValueError, TypeError):
                     continue
         return valid
+
+    def _normalize_emotion(self, emotion: str, secondary: str) -> tuple:
+        """2026-09-05 规范化 emotion: 老 prompt 输出 "思念, 爱情" 这种要拆分成主+辅
+
+        Returns: (emotion, emotion_secondary)
+        """
+        # 取情绪列表 (允许从 emotion 或 secondary 字段里提取以逗号分隔的多个)
+        all_emotions = []
+        for src in (emotion, secondary):
+            if not src:
+                continue
+            # 拆分中文逗号 / 英文逗号
+            for piece in re.split(r"[,，、]", str(src)):
+                p = piece.strip()
+                if p and p not in all_emotions:
+                    # 2026-09-06 过滤: 只保留 26 标签白名单, LLM 自由发挥的 "遗憾" "温柔" 等要丢弃
+                    if p in ALLOWED_EMOTIONS:
+                        all_emotions.append(p)
+                    else:
+                        logger.warning(f"⚠️ LLM 返回非法情绪 {p!r}, 丢弃")
+        if not all_emotions:
+            return None, None
+        main = all_emotions[0][:30] if all_emotions[0] else None
+        sec = all_emotions[1][:30] if len(all_emotions) > 1 and all_emotions[1] else None
+        return main, sec
 
     def _extract_partial_json(self, text: str) -> List[Dict]:
         """从被截断的 JSON 里提取已闭合的项 (2026-09-05 容错)
@@ -346,6 +408,7 @@ class CommentAnalyzer:
                     c.ai_label = r["label"]
                     c.ai_reason = r["reason"]
                     c.ai_emotion = r.get("emotion")
+                    c.ai_emotion_secondary = r.get("emotion_secondary")
                     c.ai_emotion_intensity = r.get("emotion_intensity")
                     c.ai_emotion_keywords = r.get("emotion_keywords")
                     c.ai_analyzed_at = now
