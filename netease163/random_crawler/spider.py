@@ -460,24 +460,33 @@ class RandomCrawler:
                 total_saved_this_run += saved_hot
                 self._log_crawl("CommentSpider.hot", song_id, True, "", duration_hot)
 
-            # 2. 增量模式 (默认)
+            # 2. 增量模式 (默认) + 全量完成度判定
+            # 2026-09-06 老杨反馈: 评论完成度 0/272 → 真根因 total 未回写 + 增量模式不标完成
+            # 修法: 拉完第一页就拿 total (即使已知)，实时更新 + 判定完成
             if not full_crawl:
-                # 拉最新一页 (offset=0)
                 t0 = time.time()
                 result = self.comment_spider.fetch(song_id=song_id, limit=PAGE_SIZE, offset=0)
                 duration = int((time.time() - t0) * 1000)
                 if result:
-                    # 拿 total 同步入库 (不是 completed 也能拿)
-                    if not comment_total and result.get("total"):
-                        comment_total = result["total"]
-                        self._update_status_field(song_id, "comment_total", comment_total)
+                    # 强制回写 total (即使已有, 确保 DB 准确)
+                    api_total = result.get("total", 0)
+                    if api_total:
+                        if api_total != comment_total:
+                            self._update_status_field(song_id, "comment_total", api_total)
+                            comment_total = api_total
                     saved = self._save_comments(song_id, result.get("comments", []))
                     total_saved_this_run += saved
                     self._log_crawl("CommentSpider", song_id, True, "", duration)
+                    # 增量模式: 评论数 < PAGE_SIZE 说明已全部爬过 (尾页)
+                    page_size = len(result.get("comments", []))
+                    if comment_total > 0 and page_size >= comment_total:
+                        self._update_status_field(song_id, "comments_completed", 1)
+                        self._update_status_field(song_id, "comments_completed_at", "now_cst")
+                        self._update_status_field(song_id, "last_comment_offset", comment_total)
                 return total_saved_this_run
 
             # 3. 全量模式 + 断点续传
-            # 拿 total (如果还不知)
+            # 拿 total (强制 first fetch, 防止 total=0 卡死)
             if not comment_total:
                 t0 = time.time()
                 first = self.comment_spider.fetch(song_id=song_id, limit=1, offset=0)
