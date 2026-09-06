@@ -17,6 +17,7 @@ logs/
 # 编辑器
 .vscode/
 .idea/
+.workbuddy/
 *.swp
 *.swo
 # 凭据
