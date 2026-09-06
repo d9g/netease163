@@ -20,7 +20,7 @@ from ..utils import get_logger
 logger = get_logger("netease163.ai")
 
 # ==================== 配置 ====================
-BATCH_SIZE = 25  # 每批 25 条评论 (单次 prompt ~ 4000 tokens)
+BATCH_SIZE = 50  # 每批 50 条评论 (单次 prompt ~ 6000 tokens, 翻倍吞吐)
 
 # 2026-09-06 严格白名单: LLM 只能从这 26 个标签里选, 其他的丢弃
 ALLOWED_EMOTIONS = {
