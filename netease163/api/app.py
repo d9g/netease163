@@ -13,6 +13,7 @@ from typing import Optional, List
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Query, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import select, func, desc
@@ -158,6 +159,37 @@ async def api_key_middleware(request, call_next):
         from fastapi.responses import JSONResponse
         return JSONResponse({"error": "Unauthorized: invalid or missing API Key"}, status_code=401)
     return await call_next(request)
+
+
+@app.exception_handler(PermissionError)
+async def permission_error_handler(request, exc):
+    """
+    未登录错误统一转 HTTP 401
+
+    之前 raise PermissionError("未登录, 请先调用 login_with_*()") 这种技术文案
+    会被全局 handler 转成 500 + 原始错误给用户看，用户看不懂。
+    现在统一转 401 + 友好文案，前端可识别 401 自动跳登录页。
+    """
+    logger.warning(f"⚠️ 未登录访问 {request.url.path}")
+    return JSONResponse(
+        status_code=401,
+        content={
+            "error": "login_required",
+            "detail": "此功能需要登录后才能使用，请在菜单中点击 🔐 登录",
+        },
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc):
+    """
+    HTTPException 统一处理 (FastAPI 默认会处理，但 logging 加一层)
+    """
+    logger.warning(f"⚠️ HTTP {exc.status_code} {request.url.path}: {exc.detail}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": str(exc.detail), "detail": exc.detail},
+    )
 
 
 @app.exception_handler(Exception)
@@ -444,8 +476,12 @@ def api_my_favorite(limit: int = Query(50, ge=1, le=200)):
     from netease163.login import get_my_favorite
     try:
         return get_my_favorite(limit=limit)
+    except HTTPException:
+        # 底层已抛出友好 HTTPException(401), 直接透传
+        raise
     except PermissionError as e:
-        raise HTTPException(401, str(e))
+        # 兑底: 还有调用点未改, 统一转 401 + 友好文案
+        raise HTTPException(401, "此功能需要登录后才能使用，请在菜单中点击 🔐 登录") from e
     except Exception as e:
         raise HTTPException(500, str(e))
 
@@ -456,8 +492,10 @@ def api_my_playlists(limit: int = Query(30, ge=1, le=100)):
     from netease163.login import get_my_playlists
     try:
         return get_my_playlists(limit=limit)
+    except HTTPException:
+        raise
     except PermissionError as e:
-        raise HTTPException(401, str(e))
+        raise HTTPException(401, "此功能需要登录后才能使用，请在菜单中点击 🔐 登录") from e
     except Exception as e:
         raise HTTPException(500, str(e))
 

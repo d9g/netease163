@@ -10,6 +10,8 @@ import os
 import json
 from pathlib import Path
 from typing import Optional, Dict, Any
+from functools import wraps
+from fastapi import HTTPException
 from ..utils import get_logger, LOGS_DIR
 
 logger = get_logger("netease163.login")
@@ -33,7 +35,7 @@ class LoginManager:
         self._load_session()
 
     def _load_session(self):
-
+        """
         2026-09-06 P2 #9: 加密登录态 - 使用 Fernet (AES-128 CBC + HMAC-SHA256)
         key 从环境变量 NETEASE_SESSION_KEY 读 (base64-encoded 32-byte)
         未设置时降级为明文存储 (保证可用性)
@@ -161,14 +163,24 @@ class LoginManager:
 
 
 def login_required(func):
-    """装饰器: 标记需要登录态的 API"""
+    """
+    装饰器: 标记需要登录态的 API
 
+    异常处理: 未登录时抛 HTTPException(401) 而非 PermissionError
+    - 前端识别 401 自动跳转到登录页
+    - 错误文案对用户友好 (菜单 → 🔐 登录)
+    """
+
+    @wraps(func)
     def wrapper(*args, **kwargs):
         from .login import LoginManager
 
         mgr = LoginManager()
         if not mgr.is_logged_in:
-            raise PermissionError("需要登录, 请先调用 LoginManager.login_with_*()")
+            raise HTTPException(
+                status_code=401,
+                detail="此功能需要登录后才能使用，请在菜单中点击 🔐 登录",
+            )
         return func(*args, **kwargs)
 
     return wrapper
@@ -197,7 +209,10 @@ def get_my_favorite(limit: int = 50) -> Dict[str, Any]:
 
     mgr = LoginManager()
     if not mgr.is_logged_in:
-        raise PermissionError("未登录, 请先调用 login_with_*()")
+        raise HTTPException(
+            status_code=401,
+            detail="此功能需要登录后才能使用，请在菜单中点击 🔐 登录",
+        )
 
     # 1. 拿用户所有歌单
     pl_result = GetUserPlaylists(mgr.user_id, limit=30)
@@ -253,7 +268,10 @@ def get_my_playlists(limit: int = 30) -> Dict[str, Any]:
     """
     mgr = LoginManager()
     if not mgr.is_logged_in:
-        raise PermissionError("未登录, 请先调用 login_with_*()")
+        raise HTTPException(
+            status_code=401,
+            detail="此功能需要登录后才能使用，请在菜单中点击 🔐 登录",
+        )
 
     from pyncm.apis.user import GetUserPlaylists
     result = GetUserPlaylists(mgr.user_id, limit=limit)
