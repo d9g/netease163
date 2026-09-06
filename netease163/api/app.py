@@ -737,20 +737,28 @@ def get_candidates(
     type: str = Query("song", description="song/artist/album/playlist"),
     limit: int = Query(10, ge=1, le=30),
 ):
-    """按名称搜索 - 返回重名候选列表, 给前端做二次筛选"""
+    """按名称搜索 - 返回重名候选列表, 给前端做二次筛选
+
+    song 类型额外逻辑:
+    - 入库未存的歌曲 (在线搜索顺手存入本地)
+    - 返回 comment_total (DB 有则用 DB, 无则实时拉)
+    - in_db=True 标记是否已在本地
+    """
     from netease163.spiders.search_helpers import search_by_name
     if type not in ("song", "artist", "album", "playlist"):
         raise HTTPException(400, "type 必须为 song/artist/album/playlist")
     try:
         candidates = search_by_name(q, type, limit=limit)
-        # song 类型额外加 comment_total (DB 有则用 DB, 无则实时拉)
+        # song 类型额外加 comment_total + 自动入库
         if type == "song":
             from netease163.storage.db import get_session
             from netease163.storage.models import Song
+            from netease163.spiders.song import SongSpider
+            from netease163.spiders.comment import CommentSpider
+            from datetime import datetime
             session = get_session()
             try:
                 song_ids = [c["id"] for c in candidates if c.get("id")]
-                # DB 查
                 if song_ids:
                     stmt = select(Song).where(Song.id.in_(song_ids))
                     db_songs = {s.id: s for s in session.execute(stmt).scalars().all()}
@@ -758,27 +766,74 @@ def get_candidates(
                     db_songs = {}
             finally:
                 session.close()
-            # 实时拉评论数 (DB 没数据的)
-            from netease163.spiders.comment import CommentSpider
-            spider = CommentSpider()
+
+            song_spider = SongSpider()
+            comment_spider = CommentSpider()
+
             for c in candidates:
                 song_id = c.get("id")
                 if not song_id:
                     c["comment_total"] = 0
+                    c["in_db"] = False
                     continue
                 db_s = db_songs.get(song_id)
                 if db_s and (db_s.comment_total or 0) > 0:
+                    # DB 已有且 comment_total > 0: 不动
                     c["comment_total"] = db_s.comment_total
                     c["in_db"] = True
-                else:
-                    # 实时拉 (仅前 8 个, 后续默认 0)
+                    continue
+                # DB 没有或者 comment_total=0: 拉详情 + 拉评论总数, 入库
+                try:
+                    detail = song_spider.fetch(song_id)
+                    # 从详情拼装 _save_song 接受的格式
+                    album_obj = detail.get("album", {})
+                    song_data = {
+                        "id": detail.get("id", song_id),
+                        "name": detail.get("name", c.get("name", "")),
+                        "artists": detail.get("artists", []),
+                        "album_id": album_obj.get("id"),
+                        "album_name": album_obj.get("name", ""),
+                        "duration_ms": detail.get("duration_ms", 0),
+                        "pic_url": album_obj.get("pic_url", ""),
+                    }
+                    # 先拿评论总数
+                    cr = comment_spider.fetch(song_id=song_id, limit=1)
+                    api_total = (cr or {}).get("total", 0)
+                    song_data["comment_total"] = api_total
+                    # 入库
+                    session = get_session()
                     try:
-                        cr = spider.safe_fetch(song_id, limit=1)
-                        c["comment_total"] = (cr or {}).get("total", 0)
-                        c["in_db"] = False
-                    except Exception:
-                        c["comment_total"] = 0
-                        c["in_db"] = False
+                        if not session.get(Song, song_id):
+                            song_obj = Song(
+                                id=song_data["id"],
+                                name=song_data["name"],
+                                artists=song_data["artists"],
+                                album_id=song_data.get("album_id"),
+                                album_name=song_data.get("album_name", ""),
+                                duration_ms=song_data.get("duration_ms", 0),
+                                pic_url=song_data.get("pic_url", ""),
+                                comment_total=song_data.get("comment_total", 0),
+                            )
+                            session.add(song_obj)
+                            session.commit()
+                            logger.info(f"💾 搜索入库: {song_id} - {song_data['name']} (comment_total={api_total})")
+                            c["in_db"] = True
+                        else:
+                            # 已存在但 comment_total=0: 更新总数
+                            existing = session.get(Song, song_id)
+                            if existing and (existing.comment_total or 0) == 0:
+                                existing.comment_total = api_total
+                                session.commit()
+                                c["in_db"] = True
+                            else:
+                                c["in_db"] = True
+                        c["comment_total"] = api_total
+                    finally:
+                        session.close()
+                except Exception as e:
+                    logger.warning(f"⚠️  搜索入库失败 song={song_id}: {e}")
+                    c["comment_total"] = 0
+                    c["in_db"] = False
         return {"q": q, "type": type, "count": len(candidates), "candidates": candidates}
     except Exception as e:
         raise HTTPException(500, "搜索失败, 请稍后再试")
