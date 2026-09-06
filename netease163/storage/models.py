@@ -124,6 +124,7 @@ class SearchLog(Base):
     search_type = Column(String(20), default="song")
     result_count = Column(Integer, default=0)
     searched_at = Column(DateTime, default=now_cst, index=True)
+    deleted_at = Column(DateTime)  # P2-5 软删除标记 (服务重启后能记住被删的词)
 
 
 class CrawlLog(Base):

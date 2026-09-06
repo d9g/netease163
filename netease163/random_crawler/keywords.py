@@ -52,12 +52,15 @@ class KeywordPool:
         self._load_from_db()
 
     def _load_from_db(self):
-        """从 DB 加载已用过的关键词 + 合并初始池"""
+        """从 DB 加载已用过的关键词 + 合并初始池
+
+        P2-5 修复: 过滤掉已软删除的关键词 (deleted_at IS NOT NULL)
+        """
         try:
             session = get_session()
             try:
-                # 拿最近 30 天搜索过的关键词作为扩展源
-                stmt = select(SearchLog.keyword).distinct().limit(100)
+                # 拿最近 30 天搜索过的关键词作为扩展源, 排除被删的
+                stmt = select(SearchLog.keyword).distinct().where(SearchLog.deleted_at.is_(None)).limit(100)
                 rows = session.execute(stmt).all()
                 used_keywords = [r[0] for r in rows]
                 # 合并: 初始池 + DB 中已用 (去重)

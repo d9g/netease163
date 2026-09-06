@@ -573,11 +573,13 @@ def search_comments(
         if emotion:
             conditions.append(Comment.ai_emotion == emotion)
         if keyword:
-            like_pat = f"%{keyword}%"
+            # P2-4 修复: LIKE 通配符转义, 避免用户输入 % / _ 触发全表扫描
+            escaped = (keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_"))
+            like_pat = f"%{escaped}%"
             conditions.append(
                 or_(
-                    Comment.content.like(like_pat),
-                    Comment.ai_emotion_keywords.like(like_pat),
+                    Comment.content.like(like_pat, escape="\\"),
+                    Comment.ai_emotion_keywords.like(like_pat, escape="\\"),
                 )
             )
         if min_liked > 0:
@@ -661,9 +663,14 @@ def list_emotions():
 
 
 # ==================== 随机爬取 (后台调度) ====================
-@app.get("/api/v1/random/crawl/now", tags=["随机爬取"])
+@app.post("/api/v1/random/crawl/now", tags=["随机爬取"])
 def api_random_crawl_now(target: int = Query(10, ge=1, le=50, description="本轮目标数")):
-    """手动触发: 跑一轮随机爬取 (返回 stats)"""
+    """手动触发: 跑一轮随机爬取 (返回 stats)
+
+    P2-6 修复: 之前用 GET 触发耗时数分钟的状态变更操作, 违反 HTTP 语义
+    GET 应该是幂等 + 安全, 状态变更必须 POST
+    """
+    from netease163.random_crawler.scheduler import get_crawler
     from netease163.random_crawler.scheduler import get_crawler
     try:
         stats = get_crawler().run_one_round()
@@ -977,21 +984,50 @@ def api_add_keyword(payload: dict = Body(..., example={"keyword": "新歌手"}))
 
 @app.delete("/api/v1/random/keywords", tags=["随机爬取"])
 def api_remove_keyword(payload: dict = Body(..., example={"keyword": "周杰伦"})):
-    """从关键词池删除关键词（不准删内置）"""
+    """从关键词池删除关键词（不准删内置）
+
+    P2-5 修复: 之前只改内存, 服务重启后被删词会复活 (SearchLog 还在)
+    现在同时落 SearchLog.deleted_at (软删除), 启动加载时过滤
+    """
     keyword = (payload.get("keyword") or "").strip()
     if not keyword:
         raise HTTPException(400, "keyword 不能为空")
     from netease163.random_crawler.keywords import get_keyword_pool, INITIAL_KEYWORDS
     import netease163.random_crawler.keywords as kw_module
+    from netease163.storage.db import get_session
+    from netease163.storage.models import SearchLog
+    from sqlalchemy import update
+
     pool = get_keyword_pool()
     if keyword in INITIAL_KEYWORDS:
         raise HTTPException(400, f"内置关键词不能删除: {keyword}")
     all_keywords = pool.get_all()
     if keyword not in all_keywords:
         return {"success": True, "action": "skipped", "reason": "不存在", "keyword": keyword, "pool_size": len(all_keywords)}
+
+    # 内存池去掉
     new_pool = list(set(all_keywords) - {keyword})
     kw_module._pool_instance._pool = new_pool
-    return {"success": True, "action": "removed", "keyword": keyword, "pool_size": len(new_pool)}
+
+    # 落库: 把该 keyword 所有 SearchLog 行标 deleted_at (软删除)
+    # 影响行可能为 0 (内置词或新词 DB 里没记录), 不报错
+    session = get_session()
+    try:
+        from netease163.api.cst_time import now_cst
+        result = session.execute(
+            update(SearchLog)
+            .where(SearchLog.keyword == keyword, SearchLog.deleted_at.is_(None))
+            .values(deleted_at=now_cst())
+        )
+        session.commit()
+        affected = result.rowcount
+    except Exception as e:
+        logger.warning(f"⚠️  软删除 SearchLog 失败 (内存池仍更新): {e}")
+        affected = -1
+    finally:
+        session.close()
+
+    return {"success": True, "action": "removed", "keyword": keyword, "pool_size": len(new_pool), "db_affected": affected}
 
 
 @app.get("/api/v1/random/keywords/sensitive", tags=["随机爬取"])

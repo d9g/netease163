@@ -108,3 +108,9 @@ def _run_migrations():
             conn.execute(text("ALTER TABLE song_crawl_status ADD COLUMN comments_completed_at DATETIME"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_scs_completed_time ON song_crawl_status (comments_completed, last_comment_crawled_at)"))
         conn.commit()
+        # 2026-09-06 P2-5: search_logs 加 deleted_at (软删除标记)
+        cols_s = {c["name"] for c in inspect(engine).get_columns("search_logs")}
+        if "deleted_at" not in cols_s:
+            conn.execute(text("ALTER TABLE search_logs ADD COLUMN deleted_at DATETIME"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_search_logs_deleted ON search_logs (deleted_at)"))
+            conn.commit()
