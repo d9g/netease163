@@ -7,7 +7,6 @@ from pathlib import Path
 # 兼容 python -m netease163.api.app
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-import os
 import json
 from typing import Optional, List
 from contextlib import asynccontextmanager
@@ -1205,7 +1204,7 @@ def api_run_hot_stats():
     """管理员触发：立即跑全量热度统计（默认 02:00 跑）"""
     from netease163.storage.db import get_session
     from netease163.storage.models import Song, Comment, SongHotStats
-    from sqlalchemy import select, func, desc, desc
+    from sqlalchemy import select, func, desc
     from datetime import datetime
     from netease163.api.cst_time import now_cst
     session = get_session()

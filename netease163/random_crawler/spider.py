@@ -55,6 +55,10 @@ ROUND_COMMENT_SONGS = 2  # 每轮评论增量 2 首
 ROUND_FULL_CRAWL_SONGS = 3  # 每轮全量爬 3 首未完成的歌
 STALE_DAYS = 7  # 7 天前的歌优先重爬
 
+# 2026-09-06 P3-4: _update_status_field 虚拟值常量 (避免魔法字符串)
+NOW_CST_MARK = "now_cst"  # 表示调用 now_cst() 取当前时间
+INC_MARK = "inc"  # 表示字段 +1
+
 # 跑批轮次 (24h / 20min = 72 轮)
 DAILY_ROUNDS = 72
 
@@ -578,9 +582,9 @@ class RandomCrawler:
         from ..api.cst_time import now_cst
         session = get_session()
         try:
-            if value == "now_cst":
+            if value == NOW_CST_MARK:
                 value = now_cst()
-            elif value == "inc":
+            elif value == INC_MARK:
                 # 自增, 单独 query
                 stmt = select(SongCrawlStatus).where(SongCrawlStatus.song_id == song_id)
                 row = session.execute(stmt).scalar_one_or_none()

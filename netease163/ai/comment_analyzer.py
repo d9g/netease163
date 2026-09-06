@@ -21,6 +21,7 @@ logger = get_logger("netease163.ai")
 
 # ==================== 配置 ====================
 BATCH_SIZE = 50  # 每批 50 条评论 (单次 prompt ~ 6000 tokens, 翻倍吞吐)
+BATCH_SLEEP = 0.3  # 批间休眠秒数, 避免 API 限流
 
 # 2026-09-06 严格白名单: LLM 只能从这 26 个标签里选, 其他的丢弃
 ALLOWED_EMOTIONS = {
@@ -426,7 +427,7 @@ class CommentAnalyzer:
             all_results.extend(results)
             n_batches += 1
             # 防 rate limit (从调度器读 BATCH_SLEEP, 默认 0.3)
-            sleep_sec = globals().get('BATCH_SLEEP', 0.3)
+            sleep_sec = BATCH_SLEEP
             time.sleep(sleep_sec)
         # 写库
         analyzed = 0

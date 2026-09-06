@@ -31,4 +31,7 @@ songs.db-journal
 *.sqlite
 *.sqlite3
 *.db-journal
+*.db-wal# DB (P3-8)
+*.db
+*.db-shm
 *.db-wal

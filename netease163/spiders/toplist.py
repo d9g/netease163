@@ -61,4 +61,6 @@ class ToplistSpider(BaseSpider):
         }
 
     # 公开榜单 ID 映射供外部调用
-    get_toplist_ids = TOPLIST_IDS
+    # P3-5 修复: 类属性命名像方法易误读, 但保留 get_toplist_ids 别名 (向后兼容)
+    TOPLIST_IDS_ATTR = TOPLIST_IDS
+    get_toplist_ids = TOPLIST_IDS  # 别名, 兼容现有调用

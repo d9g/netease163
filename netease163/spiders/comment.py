@@ -64,6 +64,6 @@ class CommentSpider(BaseSpider):
             "song_id": song_id,
             "total": data.get("total", 0),
             "is_musician": data.get("isMusician", False),
-            "hot_comments": hot_comments if hot_only else hot_comments,
+            "hot_comments": hot_comments,
             "comments": [] if hot_only else comments,
         }

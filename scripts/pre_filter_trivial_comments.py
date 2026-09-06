@@ -13,7 +13,6 @@ import sys
 from sqlalchemy import update, select, func
 from netease163.storage.db import get_session
 from netease163.storage.models import Comment
-from netease163.ai.comment_analyzer import AI_SCORE_THRESHOLDS
 from netease163.utils import get_logger
 from netease163.api.cst_time import now_cst
 

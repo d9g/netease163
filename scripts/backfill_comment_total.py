@@ -10,8 +10,12 @@ backfill_comment_total.py - 修复 9/6 完成度 0/272 bug
        已实际爬到 N 条, 理论 total >= N
 """
 import sys
+from pathlib import Path
 import time
-sys.path.insert(0, '/root/netease163')
+# 自动算项目根 (相对 __file__)
+_project_root = Path(__file__).resolve().parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
 
 from sqlalchemy import select, and_, or_
 from sqlalchemy.orm import Session
