@@ -78,11 +78,11 @@ class RandomCrawler:
 
         # 统计
         self.today_count = 0
-        self.today_date = datetime.now().date()
+        self.today_date = now_cst().date()
 
     def _reset_if_new_day(self):
         """跨天重置计数"""
-        today = datetime.now().date()
+        today = now_cst().date()
         if today != self.today_date:
             logger.info(f"📅 跨天重置计数 (昨天 {self.today_count} 首)")
             self.today_count = 0
@@ -104,7 +104,7 @@ class RandomCrawler:
         from datetime import datetime, timedelta
         from ..storage.models import SongCrawlStatus
         from sqlalchemy import and_, desc
-        cutoff = (datetime.now() - timedelta(days=STALE_DAYS)).isoformat()
+        cutoff = (now_cst() - timedelta(days=STALE_DAYS)).isoformat()
         session = get_session()
         try:
             # 找 7 天前爬过的歌, 按 songs.comment_total desc
@@ -131,7 +131,7 @@ class RandomCrawler:
         from datetime import datetime, timedelta
         from ..storage.models import SongCrawlStatus
         from sqlalchemy import and_, desc
-        cutoff = (datetime.now() - timedelta(days=3)).isoformat()
+        cutoff = (now_cst() - timedelta(days=3)).isoformat()
         session = get_session()
         try:
             # 3 天没爬评论 + 有评论的歌
@@ -227,7 +227,7 @@ class RandomCrawler:
         try:
             stmt = select(SongCrawlStatus).where(SongCrawlStatus.song_id == song_id)
             row = session.execute(stmt).scalar_one_or_none()
-            now = datetime.now()
+            now = now_cst()
             if not row:
                 row = SongCrawlStatus(
                     song_id=song_id, last_crawled_at=now, crawl_count=1,

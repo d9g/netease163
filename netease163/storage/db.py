@@ -14,8 +14,18 @@ _SessionLocal = None
 
 
 def get_db_url() -> str:
-    """获取 DB URL"""
-    return os.getenv("DATABASE_URL") or "sqlite:///data/netease163.db"
+    """获取 DB URL
+    P2-2 修复: 之前用相对路径 "sqlite:///data/netease163.db", 跟 systemd WorkingDirectory 绑定
+    换启动目录就换一个库, 数据"凭空消失". 改为绝对路径.
+    优先级: 1. 环境变量 DATABASE_URL 2. 绝对路径 <PROJECT_ROOT>/netease163/data/netease163.db
+    """
+    if os.getenv("DATABASE_URL"):
+        return os.getenv("DATABASE_URL")
+    # PROJECT_ROOT = /root/netease163
+    # 真实 DB 路径: /root/netease163/data/netease163.db (data/ 在项目根, 不在 netease163/ 子目录)
+    project_root = Path(__file__).resolve().parent.parent.parent
+    default_db = project_root / "data" / "netease163.db"
+    return f"sqlite:///{default_db}"
 
 
 def get_engine():

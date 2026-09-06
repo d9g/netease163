@@ -712,7 +712,7 @@ def api_crawler_stats():
         songs_total = session.execute(select(func.count(Song.id))).scalar() or 0
         comments_total = session.execute(select(func.count(Comment.id))).scalar() or 0
         from datetime import datetime, timedelta
-        today = (datetime.now() - timedelta(hours=24)).isoformat()
+        today = (now_cst() - timedelta(hours=24)).isoformat()
         crawls_24h = session.execute(
             select(func.count(CrawlLog.id)).where(CrawlLog.crawled_at >= today)
         ).scalar() or 0
@@ -720,7 +720,7 @@ def api_crawler_stats():
             select(func.count(CrawlLog.id)).where(CrawlLog.crawled_at >= today, CrawlLog.success == 1)
         ).scalar() or 0
         # 今日入库
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = today_cst()
         from sqlalchemy import and_
         songs_today = session.execute(
             select(func.count(Song.id)).where(Song.created_at >= today_str)
@@ -1133,9 +1133,9 @@ def api_trending(period: str = Query("24h", description="24h/7d"), limit: int = 
     session = get_session()
     try:
         if period == "7d":
-            cutoff = (datetime.now() - timedelta(days=7)).isoformat()
+            cutoff = (now_cst() - timedelta(days=7)).isoformat()
         else:
-            cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
+            cutoff = (now_cst() - timedelta(hours=24)).isoformat()
         stmt = (
             select(SongHotStats, Song)
             .join(Song, Song.id == SongHotStats.song_id)
