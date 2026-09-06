@@ -35,10 +35,30 @@ class LoginManager:
         self._load_session()
 
     def _load_session(self):
-        """从本地文件加载登录态 (借鉴 NetCloud 配置文件)"""
+        """从本地文件加载登录态 (借鉴 NetCloud 配置文件)
+
+        2026-09-06 P2 #9: 加密登录态 - 使用 Fernet (AES-128 CBC + HMAC-SHA256)
+        key 从环境变量 NETEASE_SESSION_KEY 读 (base64-encoded 32-byte)
+        未设置时降级为明文存储 (保证可用性)
+        """
         if self.SESSION_FILE.exists():
             try:
-                data = json.loads(self.SESSION_FILE.read_text(encoding="utf-8"))
+                raw = self.SESSION_FILE.read_text(encoding="utf-8")
+                # 2026-09-06: 加密存储支持 - 以 "enc:" 前缀标识
+                if raw.startswith("enc:"):
+                    key = self._get_session_key()
+                    if key is None:
+                        logger.warning("⚠️ 加密登录态但 NETEASE_SESSION_KEY 未配置, 跳过加载")
+                        return
+                    try:
+                        from cryptography.fernet import Fernet
+                        decrypted = Fernet(key).decrypt(raw[4:].encode("utf-8"))
+                        data = json.loads(decrypted.decode("utf-8"))
+                    except Exception as e:
+                        logger.warning(f"⚠️ 加密登录态解密失败: {e}")
+                        return
+                else:
+                    data = json.loads(raw)
                 self.user_id = data.get("user_id")
                 self.nickname = data.get("nickname")
                 # 设置到 pyncm session
@@ -53,27 +73,44 @@ class LoginManager:
                 logger.warning(f"⚠️ 加载登录态失败: {e}")
 
     def _save_session(self):
-        """保存登录态"""
+        """保存登录态 (2026-09-06 P2 #9: 加密落盘)"""
         from pyncm import GetCurrentSession, DumpSessionAsString
         try:
             cookie = DumpSessionAsString(GetCurrentSession())
-            self.SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
-            self.SESSION_FILE.write_text(
-                json.dumps(
-                    {
-                        "user_id": self.user_id,
-                        "nickname": self.nickname,
-                        "cookie": cookie,
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                ),
-                encoding="utf-8",
+            payload = json.dumps(
+                {"user_id": self.user_id, "nickname": self.nickname, "cookie": cookie},
+                ensure_ascii=False, indent=2,
             )
+            # 加密存储 (如配了 NETEASE_SESSION_KEY)
+            key = self._get_session_key()
+            if key is not None:
+                try:
+                    from cryptography.fernet import Fernet
+                    encrypted = Fernet(key).encrypt(payload.encode("utf-8")).decode("utf-8")
+                    output = "enc:" + encrypted
+                except Exception as e:
+                    logger.warning(f"⚠️ 加密失败, 降级明文: {e}")
+                    output = payload
+            else:
+                output = payload
+            self.SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+            self.SESSION_FILE.write_text(output, encoding="utf-8")
             self.SESSION_FILE.chmod(0o600)
-            logger.info(f"✅ 登录态已保存到 {self.SESSION_FILE}")
+            logger.info(f"✅ 登录态已保存到 {self.SESSION_FILE} ({'加密' if key else '明文'})")
         except Exception as e:
             logger.error(f"❌ 保存登录态失败: {e}")
+
+    @staticmethod
+    def _get_session_key() -> Optional[bytes]:
+        """从 .env 读 NETEASE_SESSION_KEY, 未设返 None (明文降级)"""
+        import os
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+        except ImportError:
+            pass
+        key = os.environ.get("NETEASE_SESSION_KEY", "").strip()
+        return key.encode("utf-8") if key else None
 
     def login_with_phone(self, phone: str, password: str) -> bool:
         """手机号密码登录"""

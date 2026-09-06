@@ -39,9 +39,9 @@ MAX_INTERVAL = 25  # 最大间隔秒
 DAILY_TARGET = 100  # 需求 100+ 首/天
 
 # 每轮目标
-ROUND_TOPLIST_SONGS = 6  # 每轮从榜单取 6 首
-ROUND_KEYWORD_SONGS = 4  # 每轮从关键词取 4 首
-ROUND_TARGET = ROUND_TOPLIST_SONGS + ROUND_KEYWORD_SONGS  # 10 首/轮
+# 2026-09-06 删 ROUND_TOPLIST_SONGS / ROUND_KEYWORD_SONGS / ROUND_TARGET 死代码 (外部审计 #10)
+# run_one_round 实际用 _fetch_via_toplist(top_n=2) + _fetch_via_keyword(top_n=1)
+# 这些常量定义但从未引用, 保留造成"配置与行为不一致"误解
 
 # 跟时间做朋友分配 () 
 # 每天 100 首: 50% 重爬(7天前) + 30% 新歌 + 20% 评论增量
@@ -358,7 +358,7 @@ class RandomCrawler:
         finally:
             session.close()
 
-    def _fetch_via_toplist(self, top_n: int = ROUND_TOPLIST_SONGS) -> List[Dict]:
+    def _fetch_via_toplist(self, top_n: int = 2) -> List[Dict]:
         """榜单方式: 6 个榜单各抽 1-2 首"""
         from ..spiders.toplist import TOPLIST_IDS
         songs = []
@@ -385,7 +385,7 @@ class RandomCrawler:
                 self._log_crawl("ToplistSpider", tl_id, False, str(e))
         return songs
 
-    def _fetch_via_keyword(self, top_n: int = ROUND_KEYWORD_SONGS) -> List[Dict]:
+    def _fetch_via_keyword(self, top_n: int = 1) -> List[Dict]:
         """关键词方式: 随机抽 1-2 个关键词, 每个搜 Top 3"""
         songs = []
         keywords = self.kw_pool.get_random(n=2)
@@ -588,6 +588,28 @@ class RandomCrawler:
         """跑一轮: 跟时间做朋友 () 
         5 首重爬(7天前) + 3 首新歌(榜单/关键词) + 2 首评论增量 = 10 首
         """
+        # 2026-09-06 P2 #7: 加单实例锁 fcntl.flock, 防止多入口 (scheduler/cron/manual) 并发跑
+        # lock_path = /root/netease163/data/.spider.lock
+        import fcntl
+        from pathlib import Path
+        lock_path = Path(__file__).parent.parent.parent / "data" / ".spider.lock"
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        lock_fp = open(lock_path, "w")
+        try:
+            try:
+                fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                logger.warning("⚠️  另一进程已在跑 run_one_round, 本次跳过 (防止重复爬取)")
+                return {"songs_new": 0, "songs_recrawl": 0, "songs_dup": 0, "comments_new": 0, "comment_inc": 0, "skipped": 1}
+            return self._run_one_round_inner()
+        finally:
+            try:
+                lock_fp.close()
+            except Exception:
+                pass
+
+    def _run_one_round_inner(self) -> Dict[str, int]:
+        """实际跑一轮逻辑 (加锁后调用)"""
         self._reset_if_new_day()
         round_start = time.time()
         logger.info(f"🏃 跑一轮 (今天累计 {self.today_count}/{DAILY_TARGET}) 分配: 重爬 5 + 新歌 3 + 评论 2")
