@@ -275,13 +275,14 @@ def get_comment(
         out = []
         for c in items:
             score_info = db_scores.get(c.get("id"), {})
-            c["ai_score"] = score_info.get("ai_score", -1)
-            c["ai_label"] = score_info.get("ai_label", "")
-            c["ai_reason"] = score_info.get("ai_reason", "")
-            c["ai_emotion"] = score_info.get("ai_emotion", "")
-            c["ai_emotion_secondary"] = score_info.get("ai_emotion_secondary", "")
-            c["ai_emotion_intensity"] = score_info.get("ai_emotion_intensity", "")
-            c["ai_emotion_keywords"] = score_info.get("ai_emotion_keywords", "")
+            # 用 "or ''" 兜底 None 和缺失两种情况 (老杨 9/6 19:48 反馈评论加载失败)
+            c["ai_score"] = score_info.get("ai_score") or -1
+            c["ai_label"] = score_info.get("ai_label") or ""
+            c["ai_reason"] = score_info.get("ai_reason") or ""
+            c["ai_emotion"] = score_info.get("ai_emotion") or ""
+            c["ai_emotion_secondary"] = score_info.get("ai_emotion_secondary") or ""
+            c["ai_emotion_intensity"] = score_info.get("ai_emotion_intensity") or ""
+            c["ai_emotion_keywords"] = score_info.get("ai_emotion_keywords") or ""
             if hide_zero and c["ai_score"] == 0:
                 continue  # 跳过口水评论
             out.append(c)
