@@ -100,19 +100,23 @@ class RandomCrawler:
     def _get_priority_targets(self, limit: int) -> List[Dict]:
         """跟时间做朋友: 选 7 天前爬过但有评论的歌 (按 hot_score 排)
         返回: [{song_id, name, last_crawled_at, comment_count}]
+
+        P2-8 修复: 之前 order_by(desc(Song.id)) 用 song.id (网易云源 ID) 排序
+        跟入库时间没关系, 优先级基本随机
+        改为 order_by(Song.created_at) (入库时间早的优先重爬)
         """
         from datetime import datetime, timedelta
         from ..storage.models import SongCrawlStatus
-        from sqlalchemy import and_, desc
+        from sqlalchemy import and_, desc, asc
         cutoff = (now_cst() - timedelta(days=STALE_DAYS)).isoformat()
         session = get_session()
         try:
-            # 找 7 天前爬过的歌, 按 songs.comment_total desc
+            # 找 7 天前爬过的歌, 按 created_at ASC (最久没重爬的优先)
             stmt = (
                 select(Song.id, Song.name, Song.comment_total, SongCrawlStatus.last_crawled_at)
                 .join(SongCrawlStatus, SongCrawlStatus.song_id == Song.id)
                 .where(SongCrawlStatus.last_crawled_at < cutoff)
-                .order_by(desc(Song.id))  # 按 ID 倒序 (近期的优先)
+                .order_by(asc(Song.created_at))  # 入库时间最早的优先 (避免一直重复爬新歌)
                 .limit(limit)
             )
             rows = session.execute(stmt).all()

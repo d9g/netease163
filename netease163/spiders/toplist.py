@@ -37,11 +37,17 @@ class ToplistSpider(BaseSpider):
             from pyncm.apis import track
             detail = track.GetTrackDetail(track_ids)
             if detail.get("code") == 200:
+                # P2-7 修复: 之前 track 缺 album / pic_url / duration_ms, 入库后封面空白专辑名为空
+                # 现在补齐, 跟 SongSpider 返回结构对齐
                 tracks = [
                     {
                         "id": s["id"],
                         "name": s["name"],
-                        "artists": [a["name"] for a in s.get("ar", [])],
+                        "artists": [a["name"] for a in s.get("ar", [])],  # 字符串数组 (ToplistSpider 风格)
+                        "album_id": (s.get("al") or {}).get("id"),
+                        "album_name": (s.get("al") or {}).get("name", ""),
+                        "pic_url": (s.get("al") or {}).get("picUrl", ""),
+                        "duration_ms": s.get("dt", 0),
                         "score": p.get("trackIds", [])[i].get("score", 0) if i < len(p.get("trackIds", [])) else 0,
                     }
                     for i, s in enumerate(detail.get("songs", []))
