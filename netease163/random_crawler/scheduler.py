@@ -62,12 +62,12 @@ def get_scheduler() -> BackgroundScheduler:
     global _scheduler_instance
     if _scheduler_instance is None:
         _scheduler_instance = BackgroundScheduler(timezone="Asia/Shanghai")
-        # 每 30 分钟跑一轮
+        # 每 20 分钟跑一轮 (优化: 老杨 9/6 反馈需要更快入库, 每天 72 轮)
         _scheduler_instance.add_job(
             job_run_round,
-            CronTrigger.from_crontab("*/30 * * * *"),
+            CronTrigger.from_crontab("*/20 * * * *"),
             id="run_round",
-            name="随机爬取 - 每 30 分钟",
+            name="随机爬取 - 每 20 分钟",
             replace_existing=True,
             max_instances=1,
             coalesce=True,
