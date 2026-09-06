@@ -784,14 +784,17 @@
                 const dur = c.duration ? ` · ${Math.floor(c.duration/60000)}:${String(Math.floor((c.duration%60000)/1000)).padStart(2, '0')}` : '';
                 const extra = c.extra ? ` · ${escapeHtml(c.extra)}` : '';
                 const commentCount = c.comment_total !== undefined ? ` · 💬${c.comment_total.toLocaleString()}` : '';
+                const safeName = escapeHtml(c.name).replace(/'/g, "\\'");
+                const isSong = linkType === 'song';
                 return `
                     <div class="song-card" onclick="(${onSelect})(${c.id})">
                         <div class="num">${i+1}</div>
                         <div class="info">
                             <div class="name">${escapeHtml(c.name)}</div>
                             <div class="meta">${escapeHtml(c.subtitle || '')}${extra}${dur}${commentCount}</div>
-                            <div class="links" style="margin-top:6px;font-size:12px;">
-                                <a href="${linkUrl(c.id)}" target="_blank" style="color:#1a73e8;">${linkText}</a>
+                            <div class="actions">
+                                ${isSong ? `<a class="action-btn comment" href="javascript:void(0)" onclick="event.stopPropagation();openCommentModal(${c.id}, '${safeName}')" title="看评论">💬 评论</a>` : ''}
+                                <a class="action-btn" href="${linkUrl(c.id)}" target="_blank" onclick="event.stopPropagation()" title="${escapeHtml(linkText)}">${linkText}</a>
                             </div>
                         </div>
                     </div>
@@ -851,7 +854,7 @@
                                 <p style="margin-top: 8px;">
                                     <a href="javascript:void(0)" onclick="jumpToLyric(${song_id})">📝 看歌词</a>
                                     ·
-                                    <a href="javascript:void(0)" onclick="jumpToComment(${song_id})">💬 看全部评论</a>
+                                    <a href="javascript:void(0)" onclick="openCommentModal(${song_id}, '${escapeHtml(song.name).replace(/'/g, "\\'")}')">💬 看全部评论 (弹窗)</a>
                                 </p>
                             </div>
                         </div>
@@ -965,7 +968,7 @@
                                 <p style="margin-top: 8px;">
                                     <a href="javascript:void(0)" onclick="jumpToLyric(${data.id})">📝 看歌词</a>
                                     ·
-                                    <a href="javascript:void(0)" onclick="jumpToComment(${data.id})">💬 看评论</a>
+                                    <a href="javascript:void(0)" onclick="openCommentModal(${data.id}, '${escapeHtml(data.name).replace(/'/g, "\\'")}')">💬 看评论 (弹窗)</a>
                                 </p>
                             </div>
                         </div>
@@ -1070,6 +1073,7 @@
                     ${tracks.length === 0 ? '<p style="color: #999;">暂无歌曲</p>' : tracks.slice(0, 20).map((t, i) => {
                         const ct = commentMap[t.id] || 0;
                         const ctStr = ct > 0 ? ` · 💬${ct.toLocaleString()}` : '';
+                        const safeName = escapeHtml(t.name).replace(/'/g, "\\'");
                         return `
                         <div class="song-card">
                             <div class="num">${i+1}</div>
@@ -1078,7 +1082,8 @@
                                 <div class="meta">${(t.ar || t.artists || []).map(a => escapeHtml(typeof a === 'string' ? a : a.name || '')).join(' / ')}${ctStr}</div>
                             </div>
                             <div class="actions">
-                                <a href="javascript:void(0)" onclick="jumpToComment(${t.id})">💬</a>
+                                <a class="action-btn comment" href="javascript:void(0)" onclick="event.stopPropagation();openCommentModal(${t.id}, '${safeName}')" title="弹窗看评论">💬 ${ct > 0 ? ct.toLocaleString() : '0'}</a>
+                                <a class="action-btn" href="https://music.163.com/song?id=${t.id}" target="_blank" onclick="event.stopPropagation()" title="163 打开">🎵 163</a>
                             </div>
                         </div>
                     `;}).join('')}
@@ -1166,6 +1171,7 @@
                     ${tracks.length === 0 ? '<p style="color: #999;">暂无曲目</p>' : tracks.map((s, i) => {
                         const ct = commentMap[s.id] || 0;
                         const ctStr = ct > 0 ? ` · 💬${ct.toLocaleString()}` : '';
+                        const safeName = escapeHtml(s.name).replace(/'/g, "\\'");
                         return `
                         <div class="song-card">
                             <div class="num">${i+1}</div>
@@ -1174,7 +1180,8 @@
                                 <div class="meta">${(s.ar || s.artists || []).map(a => escapeHtml(typeof a === 'string' ? a : a.name || '')).join(' / ')}${ctStr}</div>
                             </div>
                             <div class="actions">
-                                <a href="javascript:void(0)" onclick="jumpToComment(${s.id})">💬</a>
+                                <a class="action-btn comment" href="javascript:void(0)" onclick="event.stopPropagation();openCommentModal(${s.id}, '${safeName}')" title="弹窗看评论">💬 ${ct > 0 ? ct.toLocaleString() : '0'}</a>
+                                <a class="action-btn" href="https://music.163.com/song?id=${s.id}" target="_blank" onclick="event.stopPropagation()" title="163 打开">🎵 163</a>
                             </div>
                         </div>
                     `;}).join('')}
@@ -1358,21 +1365,21 @@
             }
             r.innerHTML = `
                 <p style="color:#666;font-size:12px;margin-bottom:12px;">📊 按评论数 + 点赞数综合排序 · 共 ${data.count} 首</p>
-                ${data.songs.map((s, i) => `
+                ${data.songs.map((s, i) => {
+                    const safeName = escapeHtml(s.name).replace(/'/g, "\\'");
+                    return `
                     <div class="song-card">
                         <div class="num" style="background:${i<3?'#c20c0c':'#999'};">${i+1}</div>
                         <div class="info">
-                            <div class="name">
-                                <a href="javascript:void(0)" onclick="navigateToSong(${s.id})" style="color:#333;text-decoration:none;">${escapeHtml(s.name)}</a>
-                            </div>
-                            <div class="meta">🎤 ${escapeHtml((s.artists || []).join(', '))} · 💬 ${s.comment_total || 0} 评论 · ❤️ ${(s.liked_total || 0).toLocaleString()} 赞</div>
-                            <div class="links" style="margin-top:6px;font-size:12px;">
-                                <a href="javascript:void(0)" onclick="openCommentModal(${s.id}, '${escapeHtml(s.name).replace(/'/g, "\\'")}')" style="color:#c20c0c;margin-right:12px;">💬 查看评论</a>
-                                <a href="https://music.163.com/song?id=${s.id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
+                            <div class="name">${escapeHtml(s.name)}</div>
+                            <div class="meta">🎤 ${escapeHtml((s.artists || []).join(', '))} · 💬 ${(s.comment_total || 0).toLocaleString()} · ❤️ ${(s.liked_total || 0).toLocaleString()}</div>
+                            <div class="actions">
+                                <a class="action-btn comment" href="javascript:void(0)" onclick="event.stopPropagation();openCommentModal(${s.id}, '${safeName}')" title="查看评论">💬 查看评论</a>
+                                <a class="action-btn" href="https://music.163.com/song?id=${s.id}" target="_blank" onclick="event.stopPropagation()" title="163 打开">🎵 163</a>
                             </div>
                         </div>
                     </div>
-                `).join('')}
+                `;}).join('')}
             `;
         }
 
@@ -1385,7 +1392,9 @@
             }
             r.innerHTML = `
                 <p style="color:#666;font-size:12px;margin-bottom:12px;">💎 按点赞数排序 · 共 ${data.count} 条 (点击展开全文)</p>
-                ${data.comments.map((c, i) => `
+                ${data.comments.map((c, i) => {
+                    const safeName = escapeHtml(c.song_name || '').replace(/'/g, "\\'");
+                    return `
                     <div class="song-card" style="flex-direction:column;align-items:stretch;padding:16px;">
                         <div style="display:flex;align-items:flex-start;">
                             <div class="num" style="background:${i<3?'#c20c0c':'#999'};flex-shrink:0;">${i+1}</div>
@@ -1394,15 +1403,17 @@
                                 <div class="meta" style="margin-top:8px;">
                                     👤 ${escapeHtml(c.user_nickname || '')} · ❤️ ${(c.liked_count || 0).toLocaleString()} 赞
                                 </div>
-                                <div class="links" style="margin-top:6px;font-size:12px;">
-                                    🎵 <a href="javascript:void(0)" onclick="navigateToSong(${c.song_id})" style="color:#333;text-decoration:none;">${escapeHtml(c.song_name || '')}</a>
-                                    · <a href="javascript:void(0)" onclick="openCommentModal(${c.song_id}, '${escapeHtml(c.song_name || "").replace(/'/g, "\\'")}')" style="color:#c20c0c;margin-right:12px;">💬 查看全部</a>
-                                    · <a href="https://music.163.com/song?id=${c.song_id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
+                                <div class="meta" style="margin-top:4px;">
+                                    🎵 ${escapeHtml(c.song_name || '')}
+                                </div>
+                                <div class="actions">
+                                    <a class="action-btn comment" href="javascript:void(0)" onclick="event.stopPropagation();openCommentModal(${c.song_id}, '${safeName}')" title="查看全部评论">💬 查看全部</a>
+                                    <a class="action-btn" href="https://music.163.com/song?id=${c.song_id}" target="_blank" onclick="event.stopPropagation()" title="163 打开">🎵 163</a>
                                 </div>
                             </div>
                         </div>
                     </div>
-                `).join('')}
+                `;}).join('')}
             `;
         }
 
@@ -1415,21 +1426,21 @@
             }
             r.innerHTML = `
                 <p style="color:#666;font-size:12px;margin-bottom:12px;">⚡ 过去 24 小时热度增量 · 共 ${data.count} 首</p>
-                ${data.songs.map((s, i) => `
+                ${data.songs.map((s, i) => {
+                    const safeName = escapeHtml(s.name).replace(/'/g, "\\'");
+                    return `
                     <div class="song-card">
                         <div class="num" style="background:${i<3?'#c20c0c':'#999'};">${i+1}</div>
                         <div class="info">
-                            <div class="name">
-                                <a href="javascript:void(0)" onclick="navigateToSong(${s.id})" style="color:#333;text-decoration:none;">${escapeHtml(s.name)}</a>
-                            </div>
-                            <div class="meta">🎤 ${escapeHtml((s.artists || []).join(', '))} · 📈 +${s.hot_increase || 0} 热度</div>
-                            <div class="links" style="margin-top:6px;font-size:12px;">
-                                <a href="javascript:void(0)" onclick="openCommentModal(${s.id}, '${escapeHtml(s.name).replace(/'/g, "\\'")}')" style="color:#c20c0c;margin-right:12px;">💬 查看评论</a>
-                                <a href="https://music.163.com/song?id=${s.id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
+                            <div class="name">${escapeHtml(s.name)}</div>
+                            <div class="meta">🎤 ${escapeHtml((s.artists || []).join(', '))} · 📈 +${(s.hot_increase || 0).toLocaleString()} 热度</div>
+                            <div class="actions">
+                                <a class="action-btn comment" href="javascript:void(0)" onclick="event.stopPropagation();openCommentModal(${s.id}, '${safeName}')" title="查看评论">💬 查看评论</a>
+                                <a class="action-btn" href="https://music.163.com/song?id=${s.id}" target="_blank" onclick="event.stopPropagation()" title="163 打开">🎵 163</a>
                             </div>
                         </div>
                     </div>
-                `).join('')}
+                `;}).join('')}
             `;
         }
 
@@ -1442,7 +1453,9 @@
             }
             r.innerHTML = `
                 <p style="color:#666;font-size:12px;margin-bottom:12px;">⭐ LLM AI 评分 ≥ 4 星 · 共 ${data.count} 条 (已去重 · 点击展开)</p>
-                ${data.comments.map((c, i) => `
+                ${data.comments.map((c, i) => {
+                    const safeName = escapeHtml(c.song_name || '').replace(/'/g, "\\'");
+                    return `
                     <div class="song-card quality-card" style="flex-direction:column;align-items:stretch;padding:18px;border-left:4px solid #9b59b6;">
                         <div style="display:flex;align-items:flex-start;">
                             <div class="num" style="background:#9b59b6;color:#fff;flex-shrink:0;font-size:20px;">${c.ai_score || 0}★</div>
@@ -1452,17 +1465,17 @@
                                     <strong>AI:</strong> ${escapeHtml(c.ai_label || '')} — ${escapeHtml(c.ai_reason || '')}
                                 </div>
                                 <div class="meta" style="margin-top:10px;">
-                                    🎵 <a href="javascript:void(0)" onclick="navigateToSong(${c.song_id})" style="color:#333;text-decoration:none;font-weight:500;">${escapeHtml(c.song_name || '')}</a>
+                                    🎵 ${escapeHtml(c.song_name || '')}
                                     · 👤 ${escapeHtml(c.user_nickname || '')} · ❤️ ${(c.liked_count || 0).toLocaleString()} 赞
                                 </div>
-                                <div class="links" style="margin-top:8px;font-size:12px;">
-                                    <a href="javascript:void(0)" onclick="openCommentModal(${c.song_id}, '${escapeHtml(c.song_name || "").replace(/'/g, "\\'")}')" style="color:#c20c0c;margin-right:12px;">💬 查看全部评论</a>
-                                    <a href="https://music.163.com/song?id=${c.song_id}" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
+                                <div class="actions">
+                                    <a class="action-btn comment" href="javascript:void(0)" onclick="event.stopPropagation();openCommentModal(${c.song_id}, '${safeName}')" title="查看全部评论">💬 查看全部评论</a>
+                                    <a class="action-btn" href="https://music.163.com/song?id=${c.song_id}" target="_blank" onclick="event.stopPropagation()" title="163 打开">🎵 163</a>
                                 </div>
                             </div>
                         </div>
                     </div>
-                `).join('')}
+                `;}).join('')}
             `;
         }
 
@@ -1500,16 +1513,18 @@
                     <h3>🏆 ${escapeHtml(data.name || name)} <span style="color: #666; font-size: 13px;">前 ${tracks.length} 首</span></h3>
                     ${tracks.map((t, i) => {
                         const ct = commentMap[t.id] || 0;
-                        const ctStr = ct > 0 ? ` · 💬${ct.toLocaleString()}` : '';
+                        const safeName = escapeHtml(t.name).replace(/'/g, "\\'");
+                        const artists = (t.artists || []).map(a => escapeHtml(typeof a === 'string' ? a : a.name || '')).join(' / ');
                         return `
                         <div class="song-card">
                             <div class="num">${i+1}</div>
                             <div class="info">
                                 <div class="name">${escapeHtml(t.name)}</div>
-                                <div class="meta">${(t.artists || []).map(a => escapeHtml(typeof a === 'string' ? a : a.name || '')).join(' / ')}${ctStr}</div>
-                            </div>
-                            <div class="actions">
-                                <a href="javascript:void(0)" onclick="jumpToComment(${t.id})">💬</a>
+                                <div class="meta">${artists}</div>
+                                <div class="actions">
+                                    <a class="action-btn comment" href="javascript:void(0)" onclick="event.stopPropagation();openCommentModal(${t.id}, '${safeName}')" title="看评论">💬 ${ct > 0 ? ct.toLocaleString() : '0'}</a>
+                                    <a class="action-btn" href="https://music.163.com/song?id=${t.id}" target="_blank" onclick="event.stopPropagation()" title="163 打开">🎵 163</a>
+                                </div>
                             </div>
                         </div>
                     `;}).join('')}
@@ -1663,15 +1678,21 @@
             try {
                 const data = await api('/my/favorite', {limit: 50});
                 let html = `<h3>❤️ 我的红心歌单</h3><p style="color: #666; font-size: 13px; margin: 8px 0;">总数: ${data.total}</p>`;
-                html += (data.songs || []).map((t, i) => `
+                html += (data.songs || []).map((t, i) => {
+                    const safeName = escapeHtml(t.name).replace(/'/g, "\\'");
+                    return `
                     <div class="song-card" onclick="fillSongId(${t.id})">
                         <div class="num">${i+1}</div>
                         <div class="info">
                             <div class="name">${escapeHtml(t.name)}</div>
                             <div class="meta">${(t.artists || []).map(a => escapeHtml(a.name || a)).join(' / ')}</div>
+                            <div class="actions">
+                                <a class="action-btn comment" href="javascript:void(0)" onclick="event.stopPropagation();openCommentModal(${t.id}, '${safeName}')" title="弹窗看评论">💬 评论</a>
+                                <a class="action-btn" href="https://music.163.com/song?id=${t.id}" target="_blank" onclick="event.stopPropagation()" title="163 打开">🎵 163</a>
+                            </div>
                         </div>
                     </div>
-                `).join('');
+                `;}).join('');
                 r.innerHTML = html;
             } catch (e) { toast('查询失败: ' + e.message + ' (需要登录)', 'error'); r.innerHTML = ''; }
         }
@@ -1749,13 +1770,15 @@
 
         function _renderSongCard(s, i, mode) {
             // mode: 'comment' 跳评论页, 'lyric' 跳歌词页
+            // 9/6 20:00 老杨反馈: 评论统一用弹窗 (openCommentModal), 保留轨迹
             const onCardClick = mode === 'comment'
-                ? `jumpToComment(${s.id})`
+                ? `document.getElementById('songId').value=${s.id};showPage('lyric')`
                 : `document.getElementById('songId').value=${s.id};showPage('lyric')`;
             const pic = s.pic_url ? `<img class="pic" src="${escapeHtml(s.pic_url)}" onerror="this.style.display='none'" alt="">` : '';
             const dur = s.duration_ms ? Math.floor(s.duration_ms / 60000) + ':' + String(Math.floor((s.duration_ms % 60000) / 1000)).padStart(2, '0') : '';
             const dbCnt = s.comment_total_db || 0;
             const apiCnt = s.comment_total_api || 0;
+            const safeName = escapeHtml(s.name).replace(/'/g, "\\'");
             return `
                 <div class="song-card" onclick="${onCardClick}">
                     ${pic}
@@ -1768,7 +1791,7 @@
                             ${dur ? ' · ⏱️ ' + dur : ''}
                         </div>
                         <div class="actions">
-                            <a class="action-btn comment" href="javascript:void(0)" onclick="event.stopPropagation();jumpToComment(${s.id})" title="看评论">
+                            <a class="action-btn comment" href="javascript:void(0)" onclick="event.stopPropagation();openCommentModal(${s.id}, '${safeName}')" title="弹窗看评论 (不跳转)">
                                 💬 ${dbCnt.toLocaleString()}${apiCnt && apiCnt !== dbCnt ? ' / ' + apiCnt.toLocaleString() : ''}
                             </a>
                             <a class="action-btn" href="${escapeHtml(s.netease_url)}" target="_blank" onclick="event.stopPropagation()" title="163 打开">
