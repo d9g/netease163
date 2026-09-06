@@ -324,10 +324,8 @@ class CommentAnalyzer:
         if not comments:
             return []
         prompt = self._build_prompt(comments)
-        try:
-            response = self.llm_caller(prompt)
-        except Exception as e:
-            logger.error(f"❌ LLM 调用失败: {e}")
+        response = self._call_llm_with_retry(prompt, max_retries=3)
+        if response is None:
             return []
         results = self._parse_response(response, len(comments))
 
@@ -354,6 +352,31 @@ class CommentAnalyzer:
         if matched < len(comments):
             logger.warning(f"⚠️ LLM 返回 {len(results)} 条, 匹配 {matched}/{len(comments)} 条")
         return out
+
+    def _call_llm_with_retry(self, prompt: str, max_retries: int = 3):
+        """LLM 调用 + 指数退避重试
+
+        退避: 1s → 2s → 4s (3 次共 7s)
+        错误类型: 5xx / timeout / 429 触发重试;其他异常立即失败
+        """
+        import time as _time
+        backoff = 1.0
+        last_err = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                return self.llm_caller(prompt)
+            except Exception as e:
+                err_str = str(e)
+                last_err = e
+                # 只对 5xx / timeout / 429 重试
+                retryable = any(k in err_str for k in ["500", "502", "503", "504", "timeout", "429", "Internal Server"])
+                if not retryable or attempt == max_retries:
+                    logger.error(f"❌ LLM 调用失败 (尝试 {attempt}/{max_retries}): {e}")
+                    return None
+                logger.warning(f"⚠️ LLM 失败 (尝试 {attempt}/{max_retries}): {e}, {backoff:.0f}s 后重试...")
+                _time.sleep(backoff)
+                backoff *= 2
+        return None
 
     def analyze_pending(self, limit: int = 100, min_liked: int = 0) -> Dict:
         """分析未评分评论 (主入口)
