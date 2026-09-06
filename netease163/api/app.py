@@ -713,6 +713,7 @@ def api_crawler_stats():
     """爬取统计: 歌曲数 / 评论数 / 今日累计 / 爬取日志"""
     from netease163.storage.db import get_session
     from netease163.storage.models import Song, Comment, CrawlLog
+    from netease163.api.cst_time import now_cst, today_cst
     session = get_session()
     try:
         songs_total = session.execute(select(func.count(Song.id))).scalar() or 0
