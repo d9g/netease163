@@ -672,14 +672,15 @@ def api_crawler_stats():
         songs_today = session.execute(
             select(func.count(Song.id)).where(Song.created_at >= today_str)
         ).scalar() or 0
-        from netease163.random_crawler.scheduler import get_crawler
+        # 9/6 19:48 修复: crawler_today_count 直接用 songs_today (DB 权威)
+        # 原先从进程变量 get_crawler().today_count 算, 进程重启会清零导致显示 0/100
         return {
             "songs_total": songs_total,
             "songs_today": songs_today,
             "comments_total": comments_total,
             "crawls_24h": crawls_24h,
             "crawls_24h_success_rate": f"{crawls_success}/{crawls_24h}",
-            "crawler_today_count": get_crawler().today_count,
+            "crawler_today_count": songs_today,
             "crawler_target": 100,
         }
     except Exception as e:
@@ -690,26 +691,34 @@ def api_crawler_stats():
 
 @app.get("/api/v1/random/songs/latest", tags=["随机爬取"])
 def api_latest_crawled_songs(limit: int = Query(20, ge=1, le=100)):
-    """最新入库的歌曲"""
+    """最新入库的歌曲 (丰富信息: 评论数/封面/网易云链接/入库时间)"""
     from netease163.storage.db import get_session
-    from netease163.storage.models import Song
+    from netease163.storage.models import Song, Comment
+    from sqlalchemy import func
     session = get_session()
     try:
         stmt = select(Song).order_by(Song.created_at.desc()).limit(limit)
         rows = session.execute(stmt).scalars().all()
-        return {
-            "count": len(rows),
-            "songs": [
-                {
-                    "id": r.id,
-                    "name": r.name,
-                    "artists": r.artists or [],
-                    "album_name": r.album_name,
-                    "created_at": r.created_at.isoformat() if r.created_at else None,
-                }
-                for r in rows
-            ],
-        }
+        out = []
+        for r in rows:
+            # 查每首歌实际入库评论数
+            cnt = session.execute(
+                select(func.count(Comment.id)).where(Comment.song_id == r.id)
+            ).scalar() or 0
+            out.append({
+                "id": r.id,
+                "name": r.name,
+                "artists": r.artists or [],
+                "album_name": r.album_name,
+                "album_id": r.album_id,
+                "duration_ms": r.duration_ms,
+                "pic_url": r.pic_url,
+                "comment_total_db": cnt,  # DB 实际入库评论数
+                "comment_total_api": r.comment_total or 0,  # 网易云官方评论数
+                "netease_url": f"https://music.163.com/song?id={r.id}",
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            })
+        return {"count": len(out), "songs": out}
     finally:
         session.close()
 

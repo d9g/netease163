@@ -265,6 +265,7 @@ class RandomCrawler:
                 album_name=song_data.get("album", ""),
                 duration_ms=song_data.get("duration_ms", song_data.get("duration", 0)),
                 pic_url=song_data.get("pic_url", ""),
+                comment_total=song_data.get("comment_total", 0) or 0,
             )
             session.merge(song)
             session.commit()
@@ -474,6 +475,8 @@ class RandomCrawler:
                         if api_total != comment_total:
                             self._update_status_field(song_id, "comment_total", api_total)
                             comment_total = api_total
+                        # 同步回写 songs.comment_total (9/6 19:48 修复: 网易云官方评论数没入 songs 表)
+                        self._update_song_comment_total(song_id, api_total)
                     saved = self._save_comments(song_id, result.get("comments", []))
                     total_saved_this_run += saved
                     self._log_crawl("CommentSpider", song_id, True, "", duration)
@@ -494,6 +497,7 @@ class RandomCrawler:
                 if first and first.get("total"):
                     comment_total = first["total"]
                     self._update_status_field(song_id, "comment_total", comment_total)
+                    self._update_song_comment_total(song_id, comment_total)
                 self._log_crawl("CommentSpider.first", song_id, True, "", duration_first)
                 if comment_total == 0:
                     # 没评论的歌, 标记完成
@@ -580,6 +584,30 @@ class RandomCrawler:
                 session.commit()
         except Exception as e:
             logger.warning(f"⚠️  更新状态字段 {field}={value} 失败: {e}")
+            session.rollback()
+        finally:
+            session.close()
+
+    def _update_song_comment_total(self, song_id: int, total: int):
+        """同步回写 songs.comment_total (9/6 19:48 修复)
+
+        之前只写 song_crawl_status.comment_total, 导致前端显示 0
+        现在拉到 total 时同步回写 songs 表
+        """
+        if not total or total <= 0:
+            return
+        session = get_session()
+        try:
+            from ..storage.models import Song
+            stmt = select(Song).where(Song.id == song_id)
+            row = session.execute(stmt).scalar_one_or_none()
+            if row:
+                # 只在不一致时更新, 减少写库
+                if (row.comment_total or 0) != total:
+                    row.comment_total = total
+                    session.commit()
+        except Exception as e:
+            logger.warning(f"⚠️  回写 songs.comment_total={total} 失败: {e}")
             session.rollback()
         finally:
             session.close()

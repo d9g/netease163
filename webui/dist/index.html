@@ -198,6 +198,33 @@
             color: #999;
             margin-top: 2px;
         }
+        .song-card .actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 6px;
+            flex-wrap: wrap;
+        }
+        .song-card .action-btn {
+            font-size: 11px;
+            padding: 3px 8px;
+            border-radius: 4px;
+            background: #f0f3ff;
+            color: #4a5568;
+            text-decoration: none;
+            border: 1px solid #e2e8f0;
+            transition: all 0.15s;
+        }
+        .song-card .action-btn:hover { background: #667eea; color: white; border-color: #667eea; }
+        .song-card .action-btn.comment { background: #fff3f3; color: #c20c0c; border-color: #ffd4d4; }
+        .song-card .action-btn.comment:hover { background: #c20c0c; color: white; border-color: #c20c0c; }
+        .song-card .pic {
+            width: 48px;
+            height: 48px;
+            border-radius: 6px;
+            margin-right: 12px;
+            object-fit: cover;
+            flex-shrink: 0;
+        }
         .lyric-box {
             background: #1a1a1a;
             color: #f0f0f0;
@@ -1707,6 +1734,56 @@
             } catch (e) { toast('跑轮失败: ' + e.message, 'error'); r.innerHTML = ''; }
         }
 
+        function _formatTimeShort(iso) {
+            if (!iso) return '';
+            try {
+                const d = new Date(iso);
+                const now = new Date();
+                const diffMin = Math.floor((now - d) / 60000);
+                if (diffMin < 1) return '刚刚';
+                if (diffMin < 60) return diffMin + ' 分钟前';
+                if (diffMin < 1440) return Math.floor(diffMin / 60) + ' 小时前';
+                return d.toLocaleDateString();
+            } catch { return ''; }
+        }
+
+        function _renderSongCard(s, i, mode) {
+            // mode: 'comment' 跳评论页, 'lyric' 跳歌词页
+            const onCardClick = mode === 'comment'
+                ? `jumpToComment(${s.id})`
+                : `document.getElementById('songId').value=${s.id};showPage('lyric')`;
+            const pic = s.pic_url ? `<img class="pic" src="${escapeHtml(s.pic_url)}" onerror="this.style.display='none'" alt="">` : '';
+            const dur = s.duration_ms ? Math.floor(s.duration_ms / 60000) + ':' + String(Math.floor((s.duration_ms % 60000) / 1000)).padStart(2, '0') : '';
+            const dbCnt = s.comment_total_db || 0;
+            const apiCnt = s.comment_total_api || 0;
+            return `
+                <div class="song-card" onclick="${onCardClick}">
+                    ${pic}
+                    <div class="num">${i+1}</div>
+                    <div class="info">
+                        <div class="name">${escapeHtml(s.name)}</div>
+                        <div class="meta">
+                            ${(s.artists || []).map(a => escapeHtml(typeof a === 'string' ? a : a.name || '')).join(' / ')}
+                            ${s.album_name ? ' · ' + escapeHtml(s.album_name) : ''}
+                            ${dur ? ' · ⏱️ ' + dur : ''}
+                        </div>
+                        <div class="actions">
+                            <a class="action-btn comment" href="javascript:void(0)" onclick="event.stopPropagation();jumpToComment(${s.id})" title="看评论">
+                                💬 ${dbCnt.toLocaleString()}${apiCnt && apiCnt !== dbCnt ? ' / ' + apiCnt.toLocaleString() : ''}
+                            </a>
+                            <a class="action-btn" href="${escapeHtml(s.netease_url)}" target="_blank" onclick="event.stopPropagation()" title="163 打开">
+                                🎵 163
+                            </a>
+                            ${s.album_id ? `<a class="action-btn" href="https://music.163.com/album?id=${s.album_id}" target="_blank" onclick="event.stopPropagation()" title="专辑">💿 专辑</a>` : ''}
+                            <span class="action-btn" style="background:#f5f5f5;color:#999;cursor:default;border-color:#eee;" title="${escapeHtml(s.created_at || '')}">
+                                🕐 ${escapeHtml(_formatTimeShort(s.created_at))}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         async function loadLatestSongsInline(limit) {
             const r = document.getElementById('result');
             r.innerHTML = '<p style="color: #999;">⏳ 加载中...</p>';
@@ -1717,15 +1794,7 @@
                     return;
                 }
                 r.innerHTML = '<h3 style="margin: 16px 0;">🎵 入库清单 (最近 ' + data.count + ' 首)</h3>' +
-                    data.songs.map((s, i) => `
-                        <div class="song-card" onclick="jumpToComment(${s.id})">
-                            <div class="num">${i+1}</div>
-                            <div class="info">
-                                <div class="name">${escapeHtml(s.name)}</div>
-                                <div class="meta">${(s.artists || []).map(a => escapeHtml(typeof a === 'string' ? a : a.name || '')).join(' / ')} · ${escapeHtml(s.album_name || '')}</div>
-                            </div>
-                        </div>
-                    `).join('');
+                    data.songs.map((s, i) => _renderSongCard(s, i, 'comment')).join('');
             } catch (e) { toast('加载失败: ' + e.message, 'error'); r.innerHTML = ''; }
         }
 
@@ -1739,15 +1808,7 @@
                     return;
                 }
                 r.innerHTML = '<h3 style="margin: 16px 0;">🎵 最新 ' + data.count + ' 首</h3>' +
-                    data.songs.map((s, i) => `
-                        <div class="song-card" onclick="document.getElementById('songId').value=${s.id};showPage('lyric')">
-                            <div class="num">${i+1}</div>
-                            <div class="info">
-                                <div class="name">${escapeHtml(s.name)}</div>
-                                <div class="meta">${(s.artists || []).map(a => escapeHtml(typeof a === 'string' ? a : a.name || '')).join(' / ')} · ${escapeHtml(s.album_name || '')}</div>
-                            </div>
-                        </div>
-                    `).join('');
+                    data.songs.map((s, i) => _renderSongCard(s, i, 'lyric')).join('');
             } catch (e) { toast('加载失败: ' + e.message, 'error'); r.innerHTML = ''; }
         }
 
