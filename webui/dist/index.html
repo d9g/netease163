@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>netease163 — 网易云音乐爬虫</title>
+    <title>netease163 — 网易云音乐搜索</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -375,7 +375,7 @@
     <div class="container">
         <div class="header">
             <h1>🎵 netease163 <span class="badge">v0.2.0</span></h1>
-            <div class="subtitle">网易云音乐爬虫服务 · 借鉴 163yinyue + NetCloud · pyncm 底层</div>
+            <div class="subtitle">网易云音乐搜索服务 · 基于 pyncm + FastAPI</div>
             <div class="nav">
                 <a href="/docs" target="_blank">📚 API 文档 (Swagger)</a>
                 <a href="/redoc" target="_blank">📖 API 文档 (ReDoc)</a>
@@ -1223,7 +1223,7 @@
             } catch (e) { toast('加载失败', 'error'); r.innerHTML = ''; }
         }
 
-        // ==================== 评论弹窗 (9/4 老杨反馈) ====================
+        // ==================== 评论弹窗 ====================
         let _modalSongId = null;
         let _modalSongName = null;
         let _modalOffset = 0;
@@ -1316,7 +1316,7 @@
             }
         }
 
-        // ==================== 加载全部评论 (9/6 20:53 老杨反馈) ====================
+        // ==================== 加载全部评论 ====================
         async function loadAllModalComments() {
             if (_modalAllLoaded) return;
             const sort_by = window._modalSortBy || 'time';
@@ -1408,14 +1408,14 @@
             document.getElementById('commentModal').style.display = 'none';
         }
 
-        // goToCommentPage 已废弃 (9/6 20:53 老杨反馈跳主页没用)
+        // goToCommentPage 已废弃
 
         // ESC 关闭弹窗
         document.addEventListener('keydown', e => {
             if (e.key === 'Escape') closeCommentModal();
         });
 
-        // ==================== 排行中心导航 (9/4 老杨反馈) ====================
+        // ==================== 排行中心导航 ====================
         async function navigateToComment(song_id) {
             // 切换到 comment 页 + 自动加载评论
             showPage('comment');
@@ -1861,7 +1861,7 @@
 
         function _renderSongCard(s, i, mode) {
             // mode: 'comment' 跳评论页, 'lyric' 跳歌词页
-            // 9/6 20:00 老杨反馈: 评论统一用弹窗 (openCommentModal), 保留轨迹
+            // 评论统一用弹窗 (openCommentModal), 保留轨迹
             const onCardClick = mode === 'comment'
                 ? `document.getElementById('songId').value=${s.id};showPage('lyric')`
                 : `document.getElementById('songId').value=${s.id};showPage('lyric')`;

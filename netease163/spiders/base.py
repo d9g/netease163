@@ -1,5 +1,4 @@
 """
-BaseSpider 基类 - 借鉴 163yinyue 各类公共逻辑 + NetCloud Helper.get_logger()
 
 所有爬虫继承该类, 提供 logger + 错误处理
 """
@@ -26,7 +25,6 @@ class BaseSpider:
         raise NotImplementedError
 
     def safe_fetch(self, *args, **kwargs) -> Optional[Dict[str, Any]]:
-        """统一异常处理入口 (借鉴 NetCloud Response)"""
         try:
             result = self.fetch(*args, **kwargs)
             self.logger.info(f"✅ {self.name} 抓取成功")

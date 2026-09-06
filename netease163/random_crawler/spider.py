@@ -52,7 +52,7 @@ COMMENT_WEIGHT = 0.20  # 20% 评论增量
 ROUND_RE_SONGS = 5  # 每轮重爬 5 首
 ROUND_NEW_SONGS = 3  # 每轮新歌 3 首
 ROUND_COMMENT_SONGS = 2  # 每轮评论增量 2 首
-ROUND_FULL_CRAWL_SONGS = 3  # 每轮全量爬 3 首未完成的歌 (9/6 21:03 老杨拍板: 补齐到 API 上限 1500-2000 条)
+ROUND_FULL_CRAWL_SONGS = 3  # 每轮全量爬 3 首未完成的歌
 STALE_DAYS = 7  # 7 天前的歌优先重爬
 
 # 跑批轮次 (24h / 20min = 72 轮)
@@ -295,7 +295,7 @@ class RandomCrawler:
         updated = 0
         try:
             for c in comments:
-                # 2026-09-05 老杨反馈 https://163.d9g.com.cn/ 评论数不涨:
+                # 评论数不涨问题修复:
                 # CommentSpider.fetch() 返回的 dict 用 "id" 字段, 但 ORM 用 "comment_id",
                 # 导致 _save_comments 拿不到 comment_id → 全部 continue 跳过.
                 # 根因修复: 加 "id" 兑底, 同时保留 "comment_id" 以防其他调用方依赖
@@ -419,7 +419,7 @@ class RandomCrawler:
         return songs
 
     def _fetch_comments_for_song(self, song_id: int, full_crawl: bool = False) -> int:
-        """拉一首的评论 (2026-09-05 老杨反馈重写)
+        """拉一首的评论
 
         设计:
         - full_crawl=False (默认) 增量: 拉最新一页 (offset=0, limit=100), 不动 offset 状态
@@ -463,7 +463,7 @@ class RandomCrawler:
                 self._log_crawl("CommentSpider.hot", song_id, True, "", duration_hot)
 
             # 2. 增量模式 (默认) + 全量完成度判定
-            # 2026-09-06 老杨反馈: 评论完成度 0/272 → 真根因 total 未回写 + 增量模式不标完成
+            # 评论完成度 0/272 → total 未回写 + 增量模式不标完成
             # 修法: 拉完第一页就拿 total (即使已知)，实时更新 + 判定完成
             if not full_crawl:
                 t0 = time.time()
@@ -522,7 +522,7 @@ class RandomCrawler:
                     break
                 page_comments = result.get("comments", [])
                 if not page_comments:
-                    # 这一页空了 → 9/6 21:03 老杨反馈: 可能是网易云 API 限制
+                    # 这一页空了 → 可能是网易云 API 限制
                     # (实测 offset > ~1000 后 API 返空)
                     hit_api_limit = True
                     logger.info(f"⚠️  song={song_id} offset={current_offset} API 返空 (网易云限制 ~1000), 标记完成")
@@ -694,7 +694,7 @@ class RandomCrawler:
             self._mark_song_crawled(song_id, comment_crawled=True)
             random_sleep()
 
-        # 4. 全量爬 3 首未完成评论的歌 (9/6 21:03 老杨拍板)
+        # 4. 全量爬 3 首未完成评论的歌
         #    断点续传: 从 last_comment_offset 爬到 comment_total
         #    防反爬: 一次轮 3 首 (每首 20 页 × 8-25s 间隔 = 160-500s, 总 8-25 分钟)
         uncompleted = self._get_uncompleted_songs(limit=ROUND_FULL_CRAWL_SONGS)

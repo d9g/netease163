@@ -1,5 +1,4 @@
 """
-spiders 包 - 借鉴 163yinyue 12 个爬虫模块
 基于 pyncm 库重写 (避免自维护加密/风控)
 """
 from .base import BaseSpider

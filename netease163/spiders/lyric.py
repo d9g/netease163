@@ -1,6 +1,4 @@
 """
-LyricSpider - 歌词爬虫 (借鉴 163yinyue lyric.py)
-原 163yinyue 用公开 API, 现 pyncm 内置
 """
 from typing import Dict, Any
 from .base import BaseSpider

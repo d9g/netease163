@@ -1,13 +1,13 @@
 # netease163
 
-网易云音乐爬虫服务。基于 pyncm 库 + FastAPI，提供音乐搜索、歌词获取、评论抓取、AI 评论质量分析、热度排行等功能。
+网易云音乐搜索服务。基于 pyncm 库 + FastAPI，提供音乐搜索、歌词获取、评论浏览、AI 评论质量分析、热度排行等功能。
 
 ## ✨ 功能
 
-### 🎵 音乐爬取
+### 🎵 音乐搜索
 - 歌曲 / 歌单 / 歌手 / 专辑 / 电台 / 排行榜
-- 歌词 / 评论批量抓取
-- 随机爬取策略：跟时间做朋友（重爬 7 天前的歌 + 补充新歌 + 评论增量）
+- 歌词 / 评论批量获取
+- 增量策略：跟时间做朋友（重抓 7 天前的歌 + 补充新歌 + 评论增量）
 
 ### 🤖 AI 评论质量分析
 - LLM 批量识别评论质量（0-5 星）
@@ -70,8 +70,8 @@ netease163/
 ├── netease163/
 │   ├── api/            # FastAPI 路由
 │   ├── ai/             # LLM 评论质量分析
-│   ├── spiders/        # 各模块爬虫
-│   ├── random_crawler/ # 跟时间做朋友 爬虫策略
+│   ├── spiders/        # 各模块数据获取
+│   ├── random_crawler/ # 跟时间做朋友 调度策略
 │   ├── storage/        # SQLAlchemy 模型 + DB
 │   └── utils/          # 日志/Helper 工具
 ├── webui/dist/         # 单页 WebUI 静态文件
@@ -80,18 +80,18 @@ netease163/
 └── docs/               # 文档 + 截图
 ```
 
-## 📊 数据模型（9 张表）
+## 📊 数据模型（11 张表）
 
 - `songs` — 歌曲元数据
 - `comments` — 评论（含 AI 评分字段）
 - `lyrics` — 歌词
 - `playlists` / `playlist_songs` — 歌单
 - `artists` / `albums` — 歌手/专辑
-- `crawl_priority` — 爬虫优先级队列
-- `song_crawl_status` — 单曲爬取状态
+- `crawl_priority` — 数据获取优先级队列
+- `song_crawl_status` — 单曲获取状态
 - `song_hot_stats` — 每日热度统计
 - `keywords` — 关键词池（自扩展）
-- `crawl_log` — 爬取日志
+- `crawl_log` — 获取日志
 
 ## ⚙️ 自动调度
 
@@ -101,16 +101,16 @@ netease163/
 |--------|-----|
 | 间隔 | 30 分钟 |
 | 每轮 | 500 评论 |
-| 批量 | 25 条/批 |
+| 批量 | 50 条/批 |
 | 评分 | 0-5 星 (LLM) |
 
-### 爬虫调度
+### 数据调度
 
 | 配置项 | 值 |
 |--------|-----|
-| 间隔 | 90 分钟 |
-| 每轮目标 | 7 首 |
-| 跟时间做朋友分配 | 5 重爬 + 3 新歌 + 2 评论 |
+| 间隔 | 20 分钟 |
+| 每轮目标 | 10 首 |
+| 跟时间做朋友分配 | 5 重抓 + 3 新歌 + 2 评论 |
 
 ## 📸 截图
 
@@ -121,8 +121,6 @@ netease163/
 ### 移动端
 
 [![WebUI Mobile](docs/screenshots/webui-mobile.png)](docs/screenshots/webui-mobile.png)
-
-> 💡 点击图片查看完整大小（GitHub 私有仓库需登录后访问）
 
 ## 📝 开发
 

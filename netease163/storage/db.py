@@ -1,5 +1,4 @@
 """
-数据库连接 - 借鉴 163yinyue utils/pysql.py (改造)
 - 默认 SQLite, 通过 DATABASE_URL 切换 MySQL
 - 自动创建表 (init_db)
 """
@@ -55,7 +54,6 @@ def get_engine():
 
 
 def get_session():
-    """获取 DB session (借鉴 163yinyue settings.engine)"""
     global _SessionLocal
     if _SessionLocal is None:
         _SessionLocal = sessionmaker(bind=get_engine(), autoflush=False)
@@ -69,7 +67,7 @@ def init_db():
         Lyric, SearchLog, CrawlLog,
     )
     Base.metadata.create_all(get_engine())
-    # 2026-09-05 老杨反馈: 评论入库 bug + 情感标签 + 断点续传
+    # 2026-09-05 评论入库 bug + 情感标签 + 断点续传
     # Base.metadata.create_all 不会动已存在的表, 需手动补字段
     _run_migrations()
 

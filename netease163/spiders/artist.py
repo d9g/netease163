@@ -1,5 +1,4 @@
 """
-ArtistSpider - 歌手详情 (借鉴 163yinyue singer.py + NetCloud get_singer_id_by_name)
 """
 from typing import Dict, Any
 from .base import BaseSpider

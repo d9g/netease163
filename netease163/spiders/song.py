@@ -1,5 +1,4 @@
 """
-SongSpider - 歌曲详情 (借鉴 163yinyue song.py)
 """
 from typing import Dict, Any
 from .base import BaseSpider

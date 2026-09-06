@@ -1,12 +1,11 @@
 """
-ToplistSpider - 排行榜 (借鉴 163yinyue top_list.py)
 网易云官方榜单 ID (常用 6 个)
 """
 from typing import Dict, Any, List
 from .base import BaseSpider
 
 
-# 网易云官方排行榜 ID 映射 (来自 163yinyue top_list.py setting.py)
+# 网易云官方排行榜 ID 映射
 # 注: 网易云 2019 后改过榜单 ID, 现以 2026 实测为准
 TOPLIST_IDS = {
     "hot": 3778678,         # 热歌榜 (2026 实测)

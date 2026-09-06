@@ -1,7 +1,5 @@
 """
-LoginManager - 借鉴 NetCloud NetCloudLogin 类 (简化版)
 
-NetCloud 原版 947 行, 这里只保留核心:
 - 手机/邮箱密码登录
 - 二维码登录 (pyncm 内置)
 - 登录态 session 管理
@@ -19,7 +17,7 @@ logger = get_logger("netease163.login")
 
 class LoginManager:
     """
-    登录管理器 - 简化 NetCloud NetCloudLogin
+    登录管理器
     - 支持手机密码 (LoginViaCellphone)
     - 支持邮箱密码 (LoginViaEmail)
     - 支持二维码 (GetQRCodeLoginState)
@@ -35,7 +33,6 @@ class LoginManager:
         self._load_session()
 
     def _load_session(self):
-        """从本地文件加载登录态 (借鉴 NetCloud 配置文件)
 
         2026-09-06 P2 #9: 加密登录态 - 使用 Fernet (AES-128 CBC + HMAC-SHA256)
         key 从环境变量 NETEASE_SESSION_KEY 读 (base64-encoded 32-byte)
@@ -178,7 +175,6 @@ def login_required(func):
 
 
 # ==================== 登录态专属 API ====================
-# 借鉴 NetCloud: get_self_playlist / get_self_playlists 等登录后方法
 # 这里用 pyncm 的 GetUserAccount / GetUserPlaylists 实现
 
 def get_my_favorite(limit: int = 50) -> Dict[str, Any]:
@@ -254,7 +250,6 @@ def get_my_favorite(limit: int = 50) -> Dict[str, Any]:
 
 def get_my_playlists(limit: int = 30) -> Dict[str, Any]:
     """
-    获取我的所有歌单 (登录态) - 借鉴 NetCloud get_self_playlists
     """
     mgr = LoginManager()
     if not mgr.is_logged_in:

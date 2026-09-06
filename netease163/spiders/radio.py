@@ -1,5 +1,4 @@
 """
-RadioSpider - 电台爬虫 (借鉴 163yinyue djradio.py)
 """
 from typing import Dict, Any
 from .base import BaseSpider

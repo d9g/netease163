@@ -1,5 +1,4 @@
 """
-login 模块 - 借鉴 NetCloud NetCloudLogin 类 (简化版)
 底层用 pyncm.login 实现加密登录
 
 导出:

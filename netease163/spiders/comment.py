@@ -1,5 +1,4 @@
 """
-CommentSpider - 评论爬虫 (借鉴 163yinyue comment.py + NetCloud save_singer_all_hot_comments)
 pyncm.apis 无内置, 用 WeapiCryptoRequest 自实现 (pyncm 加密已经处理好)
 """
 from typing import Dict, Any, List

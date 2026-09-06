@@ -1,5 +1,4 @@
 """
-Helper 工具类 - 借鉴 NetCloud Helper 设计
 
 - get_logger() 统一 logger
 - config() 加载 .env 配置
@@ -14,7 +13,6 @@ from typing import Optional
 
 def get_logger(name: str = "netease163") -> logging.Logger:
     """
-    借鉴 NetCloud Helper.get_logger()
     统一 logger 入口, 确保所有模块日志格式一致
     """
     logger = logging.getLogger(name)
@@ -33,7 +31,6 @@ def get_logger(name: str = "netease163") -> logging.Logger:
     ch.setFormatter(formatter)
     logger.addHandler(ch)
 
-    # File handler (借鉴 NetCloud NetCloud.log)
     from .constants import LOGS_DIR
     Path(LOGS_DIR).mkdir(parents=True, exist_ok=True)
     fh = logging.FileHandler(

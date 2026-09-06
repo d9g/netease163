@@ -1,5 +1,4 @@
 """
-AlbumSpider - 专辑详情 (借鉴 NetCloud album 模块)
 """
 from typing import Dict, Any, List
 from .base import BaseSpider

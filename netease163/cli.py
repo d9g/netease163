@@ -1,5 +1,5 @@
 """
-CLI 入口 - 用 typer 替换 163yinyue 的 argparse
+CLI 入口
 支持 9 个爬虫子命令 + login 子命令
 """
 import typer
@@ -16,7 +16,7 @@ from netease163.spiders import (
 )
 from netease163.login import LoginManager
 
-app = typer.Typer(help="netease163 — 网易云音乐爬虫")
+app = typer.Typer(help="netease163 — 网易云音乐搜索")
 login_app = typer.Typer(help="登录管理")
 app.add_typer(login_app, name="login")
 

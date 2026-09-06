@@ -1,5 +1,4 @@
 """
-SearchSpider - 搜索 (借鉴 163yinyue search.py)
 支持搜索: 歌曲/歌手/歌单/专辑
 """
 from typing import Dict, Any, List

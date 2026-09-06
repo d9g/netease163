@@ -1,5 +1,4 @@
 """
-数据模型 - 借鉴 163yinyue pysql.py (Song_sheet163/Comment163 等)
 SQLAlchemy 2.0 风格, 9 张表
 """
 from datetime import datetime
@@ -89,7 +88,7 @@ class Comment(Base):
     ai_label = Column(String(20))  # "口水" / "中等" / "高质量"
     ai_reason = Column(String(500))  # AI 给出理由 (20字内)
     ai_analyzed_at = Column(DateTime)  # AI 分析时间
-    # 2026-09-05 情感标签扩展 (老杨 14:22 反馈):
+    # 2026-09-05 情感标签扩展:
     # 26 标签体系 详见 PLAN_2026-09-05_netease163.md
     ai_emotion = Column(String(30), index=True)  # 主标签 "感动" / "忧伤" / "幸福" 等
     ai_emotion_secondary = Column(String(30))  # 辅标签 (复杂情绪时填, 例 "感动 + 孤独")
@@ -97,7 +96,7 @@ class Comment(Base):
     ai_emotion_keywords = Column(String(200))  # 触发关键词 (例 "雨, 思念, 远方")
 
     __table_args__ = (
-        # (song_id, comment_id) 唯一 → 修复 #7 评论去重失效 (老杨 9/5)
+        # (song_id, comment_id) 唯一 → 评论去重
         UniqueConstraint("song_id", "comment_id", name="uq_comments_song_comment"),
         Index("idx_comments_song_time", "song_id", "comment_time"),
         Index("idx_comments_ai_score", "ai_score", "liked_count"),
@@ -118,7 +117,6 @@ class Lyric(Base):
 
 # ==================== 审计/日志 ====================
 class SearchLog(Base):
-    """搜索记录 - 借鉴 163yinyue 风格"""
     __tablename__ = "search_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -129,7 +127,6 @@ class SearchLog(Base):
 
 
 class CrawlLog(Base):
-    """爬取日志 - 借鉴 NetCloud NetCloud.log"""
     __tablename__ = "crawl_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -153,7 +150,7 @@ class SongCrawlStatus(Base):
     crawl_count = Column(Integer, default=0)  # 爬过几次
     comment_crawl_count = Column(Integer, default=0)  # 评论爬过几次
     is_priority = Column(Integer, default=0, index=True)  # 1=优先重爬
-    # 2026-09-05 断点续传字段 (老杨 14:22 反馈 "不能每次都重复爬"):
+    # 2026-09-05 断点续传字段:
     last_comment_offset = Column(Integer, default=0)  # 上次爬到的 offset (断点)
     comment_total = Column(Integer, default=0)  # 这首歌总评论数 (首次爬拿, 全量用)
     comments_completed = Column(Integer, default=0)  # 1=全量爬完 (改走增量模式)

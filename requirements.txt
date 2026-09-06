@@ -14,7 +14,7 @@ pydantic>=2.0.0       # 数据校验
 
 # 工具
 python-dotenv>=1.0.0  # .env 加载
-loguru>=0.7.0         # 日志 (借鉴 NetCloud Helper.get_logger)
+loguru>=0.7.0         # 日志
 beautifulsoup4>=4.12.0  # HTML 解析 (lyric / search 爬虫)
 
 # 调度 + 异步

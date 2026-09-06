@@ -47,7 +47,7 @@ class CommentItem(BaseModel):
     ai_score: int = -1
     ai_label: str = ""
     ai_reason: str = ""
-    # 2026-09-05 情感标签扩展 (老杨 14:22 反馈)
+    # 2026-09-05 情感标签扩展
     ai_emotion: str = ""
     ai_emotion_secondary: str = ""
     ai_emotion_intensity: str = ""
@@ -120,7 +120,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="netease163 API",
-    description="网易云音乐爬虫服务 · 借鉴 NetCloud + 163yinyue · pyncm 底层",
+    description="网易云音乐搜索服务 · 基于 pyncm + FastAPI",
     version="0.2.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -128,7 +128,7 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000", "https://163.d9g.com.cn"],  # 审计 #4 修复: 限定来源
+    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
     allow_credentials=False,
@@ -162,7 +162,7 @@ async def api_key_middleware(request, call_next):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """统一异常处理 (借鉴 NetCloud Response)"""
+    """统一异常处理"""
     logger.error(f"❌ {request.url.path}: {exc}", exc_info=True)
     return {"error": str(exc)}
 
@@ -233,7 +233,7 @@ def get_comment(
     hide_zero: bool = Query(True, description="过滤 0 星口水评论"),
 ):
     """获取歌曲评论 (实时拉取 + 本地 ai_score 合并 + 过滤 0 星)"""
-    # 9/6 20:53 老杨反馈弹窗翻页不准: 之前 limit*2 拉 40 条 + offset 步进 20 会重复
+    # 弹窗翻页不准修复: 之前 limit*2 拉 40 条 + offset 步进 20 会重复
     # 修复: limit 就是真实 limit, 前端 MODAL_PAGE_SIZE 跟 API limit 对齐
     result = CommentSpider().safe_fetch(song_id, limit=limit, offset=offset, hot_only=hot_only)
     if result is None:
@@ -277,7 +277,7 @@ def get_comment(
         out = []
         for c in items:
             score_info = db_scores.get(c.get("id"), {})
-            # 用 "or ''" 兜底 None 和缺失两种情况 (老杨 9/6 19:48 反馈评论加载失败)
+            # 用 "or "" 兜底 None 和缺失两种情况
             c["ai_score"] = score_info.get("ai_score") or -1
             c["ai_label"] = score_info.get("ai_label") or ""
             c["ai_reason"] = score_info.get("ai_reason") or ""
@@ -463,7 +463,7 @@ def api_my_playlists(limit: int = Query(30, ge=1, le=100)):
 
 
 
-# ==================== 评论搜索 (老杨 14:22 反馈) ====================
+# ==================== 评论搜索 ====================
 from pydantic import BaseModel
 from typing import Optional
 
@@ -504,7 +504,7 @@ def search_comments(
     limit: int = Query(50, ge=1, le=200, description="返回条数"),
     offset: int = Query(0, ge=0, description="分页偏移"),
 ):
-    """按情感标签 / 关键词 / 点赞数 / 评分 检索评论 (老杨 14:22 反馈)
+    """按情感标签 / 关键词 / 点赞数 / 评分 检索评论
 
     示例:
     - /api/v1/comments/search?emotion=思念&min_liked=100

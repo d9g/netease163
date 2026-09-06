@@ -1,5 +1,4 @@
 """
-PlaylistSpider - 歌单详情 (借鉴 163yinyue song_sheet.py)
 """
 from typing import Dict, Any, List
 from .base import BaseSpider
