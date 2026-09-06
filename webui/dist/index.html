@@ -425,7 +425,6 @@
             <div id="commentModalBody" class="modal-body">⏳ 加载中...</div>
             <div class="modal-footer">
                 <a id="commentModalSongLink" href="#" target="_blank" style="color:#1a73e8;">🎵 163 播放</a>
-                <a id="commentModalAllLink" href="javascript:void(0)" onclick="goToCommentPage()" style="color:#c20c0c;">📄 完整评论页</a>
             </div>
         </div>
     </div>
@@ -1228,12 +1227,19 @@
         let _modalSongId = null;
         let _modalSongName = null;
         let _modalOffset = 0;
-        const MODAL_PAGE_SIZE = 20;
+        // 9/6 20:53 跟后端 API limit 对齐 (40)
+        const MODAL_PAGE_SIZE = 40;
+        let _modalTotal = 0;
+        let _modalAllLoaded = false;
+        let _modalLoadedItems = [];
 
         async function openCommentModal(song_id, song_name, sort_by = 'hot') {
             _modalSongId = song_id;
             _modalSongName = song_name || '评论';
             _modalOffset = 0;
+            _modalTotal = 0;
+            _modalAllLoaded = false;
+            _modalLoadedItems = [];
             const modal = document.getElementById('commentModal');
             const body = document.getElementById('commentModalBody');
             const title = document.getElementById('commentModalTitle');
@@ -1246,29 +1252,44 @@
 
         async function loadModalComments(sort_by) {
             const body = document.getElementById('commentModalBody');
-            body.innerHTML = '<p style="color:#999;">⏳ 加载评论...</p>';
+            if (!_modalAllLoaded) {
+                body.innerHTML = '<p style="color:#999;">⏳ 加载评论...</p>';
+            }
             try {
-                // hot 模式: 只看热评 (offset 翻页)
-                // time 模式: 看最新 (offset 翻页)
+                // hot 模式: 只看热评 (一次性, 不分页)
+                // time 模式: 看最新 (offset 翻页, MODAL_PAGE_SIZE=40 步进)
                 const data = await api('/comment/' + _modalSongId + '?limit=' + MODAL_PAGE_SIZE + '&offset=' + _modalOffset + (sort_by === 'hot' ? '&hot_only=true' : ''));
                 const items = sort_by === 'hot' ? (data.hot_comments || []) : (data.comments || []);
-                const total = data.total || 0;
+                _modalTotal = data.total || 0;
                 const color = sort_by === 'hot' ? '#c20c0c' : '#1a73e8';
                 const emoji = sort_by === 'hot' ? '🔥' : '💬';
                 const sortLabel = sort_by === 'hot' ? '热门' : '最新';
-                if (total === 0 && _modalOffset === 0) {
+                if (_modalTotal === 0 && _modalOffset === 0) {
                     body.innerHTML = '<p style="color:#999;">暂无评论, 已触发后台抓取 ⏳</p>';
                     fetch(API_BASE + '/crawl/comment/' + _modalSongId, {method: 'POST'}).catch(() => {});
                     return;
                 }
+                // 计算进度
+                const loadedCount = sort_by === 'hot'
+                    ? items.length
+                    : _modalOffset + items.length;
+                const progressPct = sort_by === 'hot'
+                    ? 100
+                    : Math.min(100, Math.round(loadedCount * 100 / _modalTotal));
                 body.innerHTML = `
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
-                        <div style="color:#666;font-size:13px;">共 <strong style="color:${color};">${total.toLocaleString()}</strong> 条 · 当前 ${sortLabel} · 已加载 ${_modalOffset + items.length} 条</div>
-                        <div style="display:flex;gap:8px;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                        <div style="color:#666;font-size:13px;">
+                            共 <strong style="color:${color};">${_modalTotal.toLocaleString()}</strong> 条 · ${sortLabel}
+                            · 已加载 <strong style="color:${color};">${loadedCount.toLocaleString()}</strong> 条
+                            ${sort_by === 'hot' && items.length < _modalTotal ? ` <span style="color:#999;font-size:11px;">(热评一次性返回 ${items.length} 条)</span>` : ''}
+                        </div>
+                        <div style="display:flex;gap:6px;">
                             <button class="sort-btn" onclick="switchSort('hot')" style="padding:4px 10px;border-radius:4px;border:1px solid ${sort_by==='hot'?color:'#ccc'};background:${sort_by==='hot'?color:'#fff'};color:${sort_by==='hot'?'#fff':'#333'};cursor:pointer;font-size:12px;">🔥 热门</button>
                             <button class="sort-btn" onclick="switchSort('time')" style="padding:4px 10px;border-radius:4px;border:1px solid ${sort_by==='time'?color:'#ccc'};background:${sort_by==='time'?color:'#fff'};color:${sort_by==='time'?'#fff':'#333'};cursor:pointer;font-size:12px;">⏱ 最新</button>
+                            ${sort_by === 'time' && !_modalAllLoaded ? `<button onclick="loadAllModalComments()" style="padding:4px 10px;border-radius:4px;border:1px solid #28a745;background:#28a745;color:#fff;cursor:pointer;font-size:12px;">📜 加载全部</button>` : ''}
                         </div>
                     </div>
+                    ${sort_by === 'time' ? `<div style="height:4px;background:#eee;border-radius:2px;overflow:hidden;margin-bottom:16px;"><div style="height:100%;width:${progressPct}%;background:${color};transition:width 0.3s;"></div></div>` : ''}
                     ${items.length === 0 ? '<p style="color:#999;text-align:center;padding:40px 0;">这一页没有评论了, 试试上一页或切排序</p>' : items.map((c, i) => {
                         const stars = c.ai_score >= 1 ? '⭐'.repeat(c.ai_score || 0) : '';
                         const aiBadge = c.ai_score >= 4 ? `<span style="background:#f3e5f5;color:#6a1b9a;padding:2px 6px;border-radius:3px;font-size:11px;margin-left:6px;">${stars} ${escapeHtml(c.ai_label || '')}</span>` : '';
@@ -1280,11 +1301,13 @@
                         </div>
                         `;
                     }).join('')}
+                    ${sort_by === 'time' && !_modalAllLoaded ? `
                     <div style="display:flex;justify-content:space-between;margin-top:20px;padding-top:16px;border-top:1px solid #eee;">
-                        <button class="btn" onclick="prevPage()" style="padding:8px 16px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer;" ${_modalOffset === 0 ? 'disabled' : ''}>← 上一页</button>
-                        <span style="color:#666;font-size:13px;line-height:36px;">第 ${Math.floor(_modalOffset / MODAL_PAGE_SIZE) + 1} 页</span>
-                        <button class="btn" onclick="nextPage()" style="padding:8px 16px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer;" ${items.length < MODAL_PAGE_SIZE ? 'disabled' : ''}>下一页 →</button>
+                        <button onclick="prevPage()" style="padding:8px 16px;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer;" ${_modalOffset === 0 ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>← 上一页</button>
+                        <span style="color:#666;font-size:13px;line-height:36px;">第 ${Math.floor(_modalOffset / MODAL_PAGE_SIZE) + 1} 页 / 共 ${Math.ceil(_modalTotal / MODAL_PAGE_SIZE)} 页</span>
+                        <button onclick="nextPage()" style="padding:8px 16px;border:1px solid ${loadedCount >= _modalTotal ? '#ccc' : '#1a73e8'};border-radius:4px;background:${loadedCount >= _modalTotal ? '#f5f5f5' : '#1a73e8'};color:${loadedCount >= _modalTotal ? '#999' : '#fff'};cursor:${loadedCount >= _modalTotal ? 'not-allowed' : 'pointer'};" ${loadedCount >= _modalTotal ? 'disabled' : ''}>下一页 →</button>
                     </div>
+                    ` : ''}
                 `;
                 // 保存当前 sort_by 到全局
                 window._modalSortBy = sort_by;
@@ -1293,18 +1316,91 @@
             }
         }
 
+        // ==================== 加载全部评论 (9/6 20:53 老杨反馈) ====================
+        async function loadAllModalComments() {
+            if (_modalAllLoaded) return;
+            const sort_by = window._modalSortBy || 'time';
+            const body = document.getElementById('commentModalBody');
+            body.innerHTML = `
+                <div style="padding:20px;text-align:center;">
+                    <p style="color:#1a73e8;font-size:14px;">⏳ 正在加载全部 <strong>${_modalTotal.toLocaleString()}</strong> 条评论...</p>
+                    <div id="loadProgress" style="margin:16px auto;max-width:400px;height:6px;background:#eee;border-radius:3px;overflow:hidden;">
+                        <div id="loadBar" style="height:100%;width:0%;background:#1a73e8;transition:width 0.3s;"></div>
+                    </div>
+                    <p id="loadStatus" style="color:#666;font-size:12px;">已加载 0 条</p>
+                </div>
+            `;
+            try {
+                _modalLoadedItems = [];
+                let offset = 0;
+                let pageNum = 0;
+                const totalPages = Math.ceil(_modalTotal / MODAL_PAGE_SIZE);
+                while (offset < _modalTotal) {
+                    pageNum++;
+                    const data = await api('/comment/' + _modalSongId + '?limit=' + MODAL_PAGE_SIZE + '&offset=' + offset);
+                    const items = data.comments || [];
+                    if (items.length === 0) break;
+                    _modalLoadedItems = _modalLoadedItems.concat(items);
+                    offset += items.length;
+                    // 更新进度
+                    const pct = Math.min(100, Math.round(offset * 100 / _modalTotal));
+                    const bar = document.getElementById('loadBar');
+                    const status = document.getElementById('loadStatus');
+                    if (bar) bar.style.width = pct + '%';
+                    if (status) status.textContent = `已加载 ${_modalLoadedItems.length.toLocaleString()} / ${_modalTotal.toLocaleString()} 条 (${pageNum}/${totalPages} 页)`;
+                    if (items.length < MODAL_PAGE_SIZE) break;
+                }
+                _modalAllLoaded = true;
+                // 渲染全部评论
+                const color = sort_by === 'hot' ? '#c20c0c' : '#1a73e8';
+                body.innerHTML = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+                        <div style="color:#666;font-size:13px;">
+                            ✅ 已加载 <strong style="color:${color};">${_modalLoadedItems.length.toLocaleString()}</strong> / ${_modalTotal.toLocaleString()} 条 (全部)
+                        </div>
+                        <div style="display:flex;gap:6px;">
+                            <button class="sort-btn" onclick="switchSort('hot')" style="padding:4px 10px;border-radius:4px;border:1px solid ${sort_by==='hot'?color:'#ccc'};background:${sort_by==='hot'?color:'#fff'};color:${sort_by==='hot'?'#fff':'#333'};cursor:pointer;font-size:12px;">🔥 热门</button>
+                            <button class="sort-btn" onclick="switchSort('time')" style="padding:4px 10px;border-radius:4px;border:1px solid ${sort_by==='time'?color:'#ccc'};background:${sort_by==='time'?color:'#fff'};color:${sort_by==='time'?'#fff':'#333'};cursor:pointer;font-size:12px;">⏱ 最新</button>
+                        </div>
+                    </div>
+                    ${_modalLoadedItems.map((c, i) => {
+                        const stars = c.ai_score >= 1 ? '⭐'.repeat(c.ai_score || 0) : '';
+                        const aiBadge = c.ai_score >= 4 ? `<span style="background:#f3e5f5;color:#6a1b9a;padding:2px 6px;border-radius:3px;font-size:11px;margin-left:6px;">${stars} ${escapeHtml(c.ai_label || '')}</span>` : '';
+                        return `
+                        <div class="modal-comment-item" style="border-left-color:${color};">
+                            <div class="modal-comment-meta">${i + 1}. ${escapeHtml(c.user?.nickname || '匿名')} · 👍 ${(c.liked_count||0).toLocaleString()} · ${c.time ? new Date(c.time).toLocaleDateString() : ''}${aiBadge}</div>
+                            <div class="modal-comment-content">${escapeHtml(c.content || '')}</div>
+                            ${c.ai_score >= 4 && c.ai_reason ? `<div class="modal-comment-ai">💡 ${escapeHtml(c.ai_reason)}</div>` : ''}
+                        </div>
+                        `;
+                    }).join('')}
+                    <div style="text-align:center;margin-top:20px;padding:12px;background:#f8f9fa;border-radius:6px;color:#666;font-size:12px;">
+                        ✅ 已加载全部 ${_modalLoadedItems.length.toLocaleString()} 条评论
+                    </div>
+                `;
+            } catch (e) {
+                body.innerHTML = `<p style="color:#c20c0c;">❌ 加载失败: ${escapeHtml(e.message)}</p>`;
+            }
+        }
+
         function switchSort(sort_by) {
             _modalOffset = 0;
+            _modalAllLoaded = false;
+            _modalLoadedItems = [];
             loadModalComments(sort_by);
         }
 
         function prevPage() {
             _modalOffset = Math.max(0, _modalOffset - MODAL_PAGE_SIZE);
+            _modalAllLoaded = false;
+            _modalLoadedItems = [];
             loadModalComments(window._modalSortBy || 'hot');
         }
 
         function nextPage() {
             _modalOffset += MODAL_PAGE_SIZE;
+            _modalAllLoaded = false;
+            _modalLoadedItems = [];
             loadModalComments(window._modalSortBy || 'hot');
         }
 
@@ -1312,12 +1408,7 @@
             document.getElementById('commentModal').style.display = 'none';
         }
 
-        function goToCommentPage() {
-            if (_modalSongId) {
-                closeCommentModal();
-                navigateToComment(_modalSongId);
-            }
-        }
+        // goToCommentPage 已废弃 (9/6 20:53 老杨反馈跳主页没用)
 
         // ESC 关闭弹窗
         document.addEventListener('keydown', e => {

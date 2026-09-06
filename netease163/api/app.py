@@ -227,13 +227,15 @@ def get_lyric(song_id: int):
 @app.get("/api/v1/comment/{song_id}", response_model=CommentResponse, tags=["爬虫"])
 def get_comment(
     song_id: int,
-    limit: int = Query(20, ge=1, le=100, description="返回条数"),
+    limit: int = Query(40, ge=1, le=100, description="返回条数"),
     offset: int = Query(0, ge=0, description="分页偏移"),
     hot_only: bool = Query(False, description="只看热门"),
     hide_zero: bool = Query(True, description="过滤 0 星口水评论"),
 ):
     """获取歌曲评论 (实时拉取 + 本地 ai_score 合并 + 过滤 0 星)"""
-    result = CommentSpider().safe_fetch(song_id, limit=limit * 2, offset=offset, hot_only=hot_only)
+    # 9/6 20:53 老杨反馈弹窗翻页不准: 之前 limit*2 拉 40 条 + offset 步进 20 会重复
+    # 修复: limit 就是真实 limit, 前端 MODAL_PAGE_SIZE 跟 API limit 对齐
+    result = CommentSpider().safe_fetch(song_id, limit=limit, offset=offset, hot_only=hot_only)
     if result is None:
         raise HTTPException(404, "评论获取失败")
 
