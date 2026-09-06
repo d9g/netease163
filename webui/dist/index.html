@@ -461,9 +461,13 @@
 
         function escapeHtml(s) {
             if (!s) return '';
-            return s.toString().replace(/[&<>"']/g, c => ({
-                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-            }[c]));
+            // P2-10 修复: 先转反斜杠 (必须在最前, 否则后续转义会再次生成 \)
+            // 歌名以 \ 结尾时内联 onclick 的 JS 字符串语法不被破坏
+            return s.toString()
+                .replace(/\\/g, '\\\\')
+                .replace(/[&<>"']/g, c => ({
+                    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+                }[c]));
         }
 
         async function checkLogin() {
@@ -985,48 +989,7 @@
             setTimeout(() => loadLyricById(song_id), 100);
         }
 
-        function jumpToComment(song_id) {
-            showPage('comment');
-            const el = document.getElementById('commentName');
-            if (el) { el.value = ''; }
-            setTimeout(() => loadCommentById(song_id), 100);
-        }
-
-        async function loadLyricById(song_id) {
-            const r = document.getElementById('result');
-            r.innerHTML = '<p style="color: #999;">⏳ 加载歌词...</p>';
-            try {
-                const data = await api('/lyric/' + song_id);
-                r.innerHTML = `
-                    <h3>📝 歌词 [ID: ${song_id}]</h3>
-                    <pre style="white-space: pre-wrap; background: #f8f9fa; padding: 16px; border-radius: 8px; font-family: inherit; line-height: 1.8;">${escapeHtml(data.lyric || '暂无歌词')}</pre>
-                    ${data.tlyric ? `<h4 style="margin-top: 16px;">翻译</h4><pre style="white-space: pre-wrap; background: #f8f9fa; padding: 16px; border-radius: 8px; font-family: inherit; line-height: 1.8;">${escapeHtml(data.tlyric)}</pre>` : ''}
-                `;
-            } catch (e) { toast('加载歌词失败', 'error'); r.innerHTML = ''; }
-        }
-
-        async function loadCommentById(song_id) {
-            const r = document.getElementById('result');
-            r.innerHTML = '<p style="color: #999;">⏳ 加载评论...</p>';
-            try {
-                const data = await api('/comment/' + song_id + '?limit=20');
-                const hot = (data.hot_comments || []).slice(0, 20);
-                const total = data.total || 0;
-                if (total === 0) {
-                    fetch(API_BASE + '/crawl/comment/' + song_id, {method: 'POST'}).catch(() => {});
-                }
-                r.innerHTML = `
-                    <h3>💬 评论 [ID: ${song_id}] <span style="color: #666; font-size: 13px;">共 ${total.toLocaleString()} 条${total === 0 ? ' · ⏳ 后台抓取中' : ''}</span></h3>
-                    <h4>🔥 热门评论</h4>
-                    ${hot.length === 0 ? '<p style="color: #999;">暂无热评</p>' : hot.map((c, i) => `
-                        <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; margin: 8px 0;">
-                            <div style="font-size: 12px; color: #666;">${i+1}. ${escapeHtml(c.user || '匿名')} <span style="color: #999;">👍 ${(c.liked_count||0).toLocaleString()}</span></div>
-                            <div style="margin-top: 4px;">${escapeHtml(c.content || '')}</div>
-                        </div>
-                    `).join('')}
-                `;
-            } catch (e) { toast('加载评论失败', 'error'); r.innerHTML = ''; }
-        }
+        
 
         async function playlistSearch() {
             const kw = document.getElementById('playlistName').value;
@@ -1421,22 +1384,6 @@
         });
 
         // ==================== 排行中心导航 ====================
-        async function navigateToComment(song_id) {
-            // 切换到 comment 页 + 自动加载评论
-            showPage('comment');
-            await new Promise(resolve => setTimeout(resolve, 100));
-            document.getElementById('commentId').value = song_id;
-            await commentSearch();
-        }
-
-        async function navigateToSong(song_id) {
-            // 切换到 song 页 + 自动加载歌曲详情
-            showPage('song');
-            await new Promise(resolve => setTimeout(resolve, 100));
-            document.getElementById('songId').value = song_id;
-            await songSearch();
-        }
-
         // ==================== 排行中心 (9/4) ====================
         async function switchRankTab(tab) {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
