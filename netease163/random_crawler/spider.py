@@ -52,10 +52,11 @@ COMMENT_WEIGHT = 0.20  # 20% 评论增量
 ROUND_RE_SONGS = 5  # 每轮重爬 5 首
 ROUND_NEW_SONGS = 3  # 每轮新歌 3 首
 ROUND_COMMENT_SONGS = 2  # 每轮评论增量 2 首
+ROUND_FULL_CRAWL_SONGS = 3  # 每轮全量爬 3 首未完成的歌 (9/6 21:03 老杨拍板: 补齐到 API 上限 1500-2000 条)
 STALE_DAYS = 7  # 7 天前的歌优先重爬
 
-# 跑批轮次 (24h / 30min = 48 轮)
-DAILY_ROUNDS = 48
+# 跑批轮次 (24h / 20min = 72 轮)
+DAILY_ROUNDS = 72
 
 
 def random_sleep():
@@ -506,9 +507,11 @@ class RandomCrawler:
                     return total_saved_this_run
 
             # 分页爬 (从 last_offset 到 total)
-            MAX_PAGES_PER_RUN = 5  # 一次最多爬 5 页 (5*100=500 条/次, 防反爬)
+            MAX_PAGES_PER_RUN = 20  # 9/6 21:03 一次最多 20 页 (20*100=2000 条/次, 达到 API 上限)
+                                    # 反爬限速靠 random_sleep (8-25s/页) 足以保证安全
             pages_done = 0
             current_offset = last_offset
+            hit_api_limit = False  # 9/6 21:03 API offset 返空 (网易云上限 ~1000)
             while pages_done < MAX_PAGES_PER_RUN and current_offset < comment_total:
                 t0 = time.time()
                 result = self.comment_spider.fetch(
@@ -519,7 +522,10 @@ class RandomCrawler:
                     break
                 page_comments = result.get("comments", [])
                 if not page_comments:
-                    # 这一页空了, 标记完成
+                    # 这一页空了 → 9/6 21:03 老杨反馈: 可能是网易云 API 限制
+                    # (实测 offset > ~1000 后 API 返空)
+                    hit_api_limit = True
+                    logger.info(f"⚠️  song={song_id} offset={current_offset} API 返空 (网易云限制 ~1000), 标记完成")
                     break
                 saved = self._save_comments(song_id, page_comments)
                 total_saved_this_run += saved
@@ -536,15 +542,20 @@ class RandomCrawler:
                     random_sleep()
                 # 预判下一页会空 → 提前标记完成
                 if len(page_comments) < PAGE_SIZE:
+                    hit_api_limit = True
                     break
 
             # 4. 更新爬取状态
             self._update_status_field(song_id, "last_comment_offset", current_offset)
             self._update_status_field(song_id, "comment_crawl_count", "inc")  # +1
-            # 判断是否完成
-            if current_offset >= comment_total:
+            # 判断是否完成 (9/6 21:03: 加 hit_api_limit 判断, API 上限就不再重复轮询)
+            if current_offset >= comment_total or hit_api_limit:
                 self._update_status_field(song_id, "comments_completed", 1)
                 self._update_status_field(song_id, "comments_completed_at", "now_cst")
+                if hit_api_limit and current_offset < comment_total:
+                    # API 上限, 记录警告
+                    pct = current_offset * 100 // max(comment_total, 1)
+                    logger.warning(f"⚠️  song={song_id} 爬到 API 上限 ({current_offset}/{comment_total}={pct}%, 剩余 {comment_total - current_offset} 条网易云不返)")
             return total_saved_this_run
         except Exception as e:
             logger.warning(f"⚠️  song={song_id} 评论拉取失败: {e}")
@@ -640,7 +651,7 @@ class RandomCrawler:
         """实际跑一轮逻辑 (加锁后调用)"""
         self._reset_if_new_day()
         round_start = time.time()
-        logger.info(f"🏃 跑一轮 (今天累计 {self.today_count}/{DAILY_TARGET}) 分配: 重爬 5 + 新歌 3 + 评论 2")
+        logger.info(f"🏃 跑一轮 (今天累计 {self.today_count}/{DAILY_TARGET}) 分配: 重爬 {ROUND_RE_SONGS} + 新歌 {ROUND_NEW_SONGS} + 评论增量 {ROUND_COMMENT_SONGS} + 全量补齐 {ROUND_FULL_CRAWL_SONGS}")
 
         stats = {"songs_new": 0, "songs_recrawl": 0, "songs_dup": 0, "comments_new": 0, "comment_inc": 0}
 
@@ -683,13 +694,13 @@ class RandomCrawler:
             self._mark_song_crawled(song_id, comment_crawled=True)
             random_sleep()
 
-        # 4. 全量爬 1 首未完成评论的歌 (2026-09-05 断点续传)
+        # 4. 全量爬 3 首未完成评论的歌 (9/6 21:03 老杨拍板)
         #    断点续传: 从 last_comment_offset 爬到 comment_total
-        #    防反爬: 一次轮只 1 首 (5-10 页 × 8-25s 间隔 = 40-250s)
-        uncompleted = self._get_uncompleted_songs(limit=1)
+        #    防反爬: 一次轮 3 首 (每首 20 页 × 8-25s 间隔 = 160-500s, 总 8-25 分钟)
+        uncompleted = self._get_uncompleted_songs(limit=ROUND_FULL_CRAWL_SONGS)
         for t in uncompleted:
             song_id = t["song_id"]
-            logger.info(f"🎯 全量爬 song={song_id} (offset={t.get('last_comment_offset')}/{t.get('comment_total')})")
+            logger.info(f"🎯 全量爬 song={song_id} (offset={t.get('last_comment_offset')}/{t.get('comment_total')}, {(t.get('last_comment_offset') or 0) * 100 // max(t.get('comment_total') or 1, 1)}%)")
             comments_saved = self._fetch_comments_for_song(song_id, full_crawl=True)
             stats["comment_inc"] += comments_saved
             stats["comments_new"] += comments_saved
