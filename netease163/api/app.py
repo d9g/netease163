@@ -790,7 +790,7 @@ def api_latest_crawled_songs(limit: int = Query(20, ge=1, le=100)):
 
 # ==================== 按名称搜索 ====================
 @app.get("/api/v1/candidates", tags=["搜索"])
-def get_candidates(
+async def get_candidates(
     q: str = Query(..., description="名称关键词"),
     type: str = Query("song", description="song/artist/album/playlist"),
     limit: int = Query(10, ge=1, le=30),
@@ -825,25 +825,24 @@ def get_candidates(
             finally:
                 session.close()
 
+            # P2-3 修复: 之前串行 fetch (N 个候选 = N×2 次网络请求), 改限并发 3 (避免网易云限流)
             song_spider = SongSpider()
             comment_spider = CommentSpider()
 
-            for c in candidates:
+            def _fetch_and_save(c):
+                """单首歌: 拉详情 + 评论总数 + 入库"""
                 song_id = c.get("id")
                 if not song_id:
                     c["comment_total"] = 0
                     c["in_db"] = False
-                    continue
+                    return c
                 db_s = db_songs.get(song_id)
                 if db_s and (db_s.comment_total or 0) > 0:
-                    # DB 已有且 comment_total > 0: 不动
                     c["comment_total"] = db_s.comment_total
                     c["in_db"] = True
-                    continue
-                # DB 没有或者 comment_total=0: 拉详情 + 拉评论总数, 入库
+                    return c
                 try:
                     detail = song_spider.fetch(song_id)
-                    # 从详情拼装 _save_song 接受的格式
                     album_obj = detail.get("album", {})
                     song_data = {
                         "id": detail.get("id", song_id),
@@ -854,37 +853,22 @@ def get_candidates(
                         "duration_ms": detail.get("duration_ms", 0),
                         "pic_url": album_obj.get("pic_url", ""),
                     }
-                    # 先拿评论总数
                     cr = comment_spider.fetch(song_id=song_id, limit=1)
                     api_total = (cr or {}).get("total", 0)
                     song_data["comment_total"] = api_total
-                    # 入库
                     session = get_session()
                     try:
                         if not session.get(Song, song_id):
-                            song_obj = Song(
-                                id=song_data["id"],
-                                name=song_data["name"],
-                                artists=song_data["artists"],
-                                album_id=song_data.get("album_id"),
-                                album_name=song_data.get("album_name", ""),
-                                duration_ms=song_data.get("duration_ms", 0),
-                                pic_url=song_data.get("pic_url", ""),
-                                comment_total=song_data.get("comment_total", 0),
-                            )
+                            song_obj = Song(**song_data)
                             session.add(song_obj)
                             session.commit()
                             logger.info(f"💾 搜索入库: {song_id} - {song_data['name']} (comment_total={api_total})")
-                            c["in_db"] = True
                         else:
-                            # 已存在但 comment_total=0: 更新总数
                             existing = session.get(Song, song_id)
                             if existing and (existing.comment_total or 0) == 0:
                                 existing.comment_total = api_total
                                 session.commit()
-                                c["in_db"] = True
-                            else:
-                                c["in_db"] = True
+                        c["in_db"] = True
                         c["comment_total"] = api_total
                     finally:
                         session.close()
@@ -892,6 +876,19 @@ def get_candidates(
                     logger.warning(f"⚠️  搜索入库失败 song={song_id}: {e}")
                     c["comment_total"] = 0
                     c["in_db"] = False
+                return c
+
+            # 限并发 3: 避免网易云限流 (大量并发会触发反爬)
+            # FastAPI async def 路由里直接 await, 不要 asyncio.run() (会冲突)
+            import asyncio
+            sem = asyncio.Semaphore(3)
+
+            async def _limited(c):
+                async with sem:
+                    return await asyncio.to_thread(_fetch_and_save, c)
+
+            tasks = [_limited(c) for c in candidates]
+            candidates = await asyncio.gather(*tasks)
         return {"q": q, "type": type, "count": len(candidates), "candidates": candidates}
     except Exception as e:
         raise HTTPException(500, "搜索失败, 请稍后再试")
