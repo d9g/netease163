@@ -85,13 +85,12 @@ netease163/
 - `songs` — 歌曲元数据
 - `comments` — 评论（含 AI 评分字段）
 - `lyrics` — 歌词
-- `playlists` / `playlist_songs` — 歌单
+- `playlists` — 歌单
 - `artists` / `albums` — 歌手/专辑
-- `crawl_priority` — 数据获取优先级队列
-- `song_crawl_status` — 单曲获取状态
+- `song_crawl_status` — 单曲爬取状态 + 断点续传
 - `song_hot_stats` — 每日热度统计
-- `keywords` — 关键词池（自扩展）
-- `crawl_log` — 获取日志
+- `crawl_logs` — 爬取日志 (spider_name/target_id/success)
+- `search_logs` — 搜索日志 (关键词池来源 + 软删除)
 
 ## ⚙️ 自动调度
 
