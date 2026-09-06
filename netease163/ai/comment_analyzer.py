@@ -343,6 +343,7 @@ class CommentAnalyzer:
                     "label": r["label"],
                     "reason": r["reason"],
                     "emotion": r.get("emotion"),
+                    "emotion_secondary": r.get("emotion_secondary"),  # P1-3 修复: 漏键
                     "emotion_intensity": r.get("emotion_intensity"),
                     "emotion_keywords": r.get("emotion_keywords"),
                 })

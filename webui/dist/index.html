@@ -860,7 +860,7 @@
                         <h4 style="margin-top: 16px;">💬 热门评论 <span style="color: #666; font-size: 12px;">(共 ${total.toLocaleString()} 条)</span></h4>
                         ${hot.length === 0 ? '<p style="color: #999;">暂无热评' + (total === 0 ? ', 等待抓取...' : '') + '</p>' : hot.map((c, i) => `
                             <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; margin: 8px 0;">
-                                <div style="font-size: 12px; color: #666;">${i+1}. ${escapeHtml(c.user?.nickname || '匿名')} <span style="color: #999;">👍 ${(c.liked_count||0).toLocaleString()}</span></div>
+                                <div style="font-size: 12px; color: #666;">${i+1}. ${escapeHtml(c.user || '匿名')} <span style="color: #999;">👍 ${(c.liked_count||0).toLocaleString()}</span></div>
                                 <div style="margin-top: 4px;">${escapeHtml(c.content || '').substring(0, 200)}</div>
                             </div>
                         `).join('')}
@@ -923,7 +923,7 @@
                     <h3>💬 评论 [ID:${song_id}] <span style="color: #666; font-size: 13px;">共 ${data.total || 0} 条</span></h3>
                     ${all.length === 0 ? '<p style="color: #999;">暂无评论</p>' : all.map((c, i) => `
                         <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; margin: 8px 0;">
-                            <div style="font-size: 12px; color: #666;">${i+1}. ${escapeHtml(c.user?.nickname || '匿名')} <span style="color: #999;">👍 ${c.liked_count || 0}</span></div>
+                            <div style="font-size: 12px; color: #666;">${i+1}. ${escapeHtml(c.user || '匿名')} <span style="color: #999;">👍 ${c.liked_count || 0}</span></div>
                             <div style="margin-top: 4px;">${escapeHtml(c.content || '')}</div>
                         </div>
                     `).join('')}
@@ -1020,7 +1020,7 @@
                     <h4>🔥 热门评论</h4>
                     ${hot.length === 0 ? '<p style="color: #999;">暂无热评</p>' : hot.map((c, i) => `
                         <div style="background: #f8f9fa; padding: 10px; border-radius: 6px; margin: 8px 0;">
-                            <div style="font-size: 12px; color: #666;">${i+1}. ${escapeHtml(c.user?.nickname || '匿名')} <span style="color: #999;">👍 ${(c.liked_count||0).toLocaleString()}</span></div>
+                            <div style="font-size: 12px; color: #666;">${i+1}. ${escapeHtml(c.user || '匿名')} <span style="color: #999;">👍 ${(c.liked_count||0).toLocaleString()}</span></div>
                             <div style="margin-top: 4px;">${escapeHtml(c.content || '')}</div>
                         </div>
                     `).join('')}
@@ -1295,7 +1295,7 @@
                         const aiBadge = c.ai_score >= 4 ? `<span style="background:#f3e5f5;color:#6a1b9a;padding:2px 6px;border-radius:3px;font-size:11px;margin-left:6px;">${stars} ${escapeHtml(c.ai_label || '')}</span>` : '';
                         return `
                         <div class="modal-comment-item" style="border-left-color:${color};">
-                            <div class="modal-comment-meta">${_modalOffset + i + 1}. ${escapeHtml(c.user?.nickname || '匿名')} · 👍 ${(c.liked_count||0).toLocaleString()} · ${c.time ? new Date(c.time).toLocaleDateString() : ''}${aiBadge}</div>
+                            <div class="modal-comment-meta">${_modalOffset + i + 1}. ${escapeHtml(c.user || '匿名')} · 👍 ${(c.liked_count||0).toLocaleString()} · ${c.time ? new Date(c.time).toLocaleDateString() : ''}${aiBadge}</div>
                             <div class="modal-comment-content">${escapeHtml(c.content || '')}</div>
                             ${c.ai_score >= 4 && c.ai_reason ? `<div class="modal-comment-ai">💡 ${escapeHtml(c.ai_reason)}</div>` : ''}
                         </div>
@@ -1335,7 +1335,12 @@
                 let offset = 0;
                 let pageNum = 0;
                 const totalPages = Math.ceil(_modalTotal / MODAL_PAGE_SIZE);
-                while (offset < _modalTotal) {
+                // P1-4 修复: 加载全部加硬上限 (避免 130万评论触发风控)
+                const LOAD_ALL_MAX_PAGES = 25;   // 25 页 × 40 = 1000 条
+                const LOAD_ALL_MAX_ITEMS = 1000;
+                const totalPagesToLoad = Math.min(totalPages, LOAD_ALL_MAX_PAGES);
+                const hardCap = Math.min(_modalTotal, LOAD_ALL_MAX_ITEMS);
+                while (offset < _modalTotal && offset < hardCap && pageNum < LOAD_ALL_MAX_PAGES) {
                     pageNum++;
                     const data = await api('/comment/' + _modalSongId + '?limit=' + MODAL_PAGE_SIZE + '&offset=' + offset);
                     const items = data.comments || [];
@@ -1368,7 +1373,7 @@
                         const aiBadge = c.ai_score >= 4 ? `<span style="background:#f3e5f5;color:#6a1b9a;padding:2px 6px;border-radius:3px;font-size:11px;margin-left:6px;">${stars} ${escapeHtml(c.ai_label || '')}</span>` : '';
                         return `
                         <div class="modal-comment-item" style="border-left-color:${color};">
-                            <div class="modal-comment-meta">${i + 1}. ${escapeHtml(c.user?.nickname || '匿名')} · 👍 ${(c.liked_count||0).toLocaleString()} · ${c.time ? new Date(c.time).toLocaleDateString() : ''}${aiBadge}</div>
+                            <div class="modal-comment-meta">${i + 1}. ${escapeHtml(c.user || '匿名')} · 👍 ${(c.liked_count||0).toLocaleString()} · ${c.time ? new Date(c.time).toLocaleDateString() : ''}${aiBadge}</div>
                             <div class="modal-comment-content">${escapeHtml(c.content || '')}</div>
                             ${c.ai_score >= 4 && c.ai_reason ? `<div class="modal-comment-ai">💡 ${escapeHtml(c.ai_reason)}</div>` : ''}
                         </div>

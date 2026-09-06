@@ -149,8 +149,13 @@ async def api_key_middleware(request, call_next):
     - .env 未设 NETEASE_API_KEY 时: 全接口开放 (开发模式)
     """
     path = request.url.path
-    skip_paths = ("/docs", "/openapi.json", "/redoc", "/", "/health", "/assets/", "/static/")
-    if any(path.startswith(p) for p in skip_paths) or path == "/favicon.ico":
+    # P0-2 修复: 之前 `"/"` 存在 tuple 里, 任何路径都以 "/" 开头, 导致中间件恒为跳过
+    # 改为 `path == "/"` 单独判断, 静态资源前缀判断放最后并排除 "/api/"
+    if path == "/" or path == "/favicon.ico":
+        return await call_next(request)
+    if path.startswith(("/docs", "/openapi.json", "/redoc", "/health")):
+        return await call_next(request)
+    if path.startswith(("/assets/", "/static/")) and not path.startswith("/api/"):
         return await call_next(request)
     if not API_KEY:
         return await call_next(request)
@@ -194,9 +199,17 @@ async def http_exception_handler(request, exc):
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """统一异常处理"""
+    """
+    全局异常 handler (P1-1 修复)
+
+    之前 return {"error": str(exc)} 非法 (必须返回 Response 对象) → 500 + 空 body
+    改为 JSONResponse(500), 错误信息完整, 排障能看到 detail
+    """
     logger.error(f"❌ {request.url.path}: {exc}", exc_info=True)
-    return {"error": str(exc)}
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal Server Error", "detail": str(exc)},
+    )
 
 
 @app.get("/", response_model=HealthResponse, tags=["health"])

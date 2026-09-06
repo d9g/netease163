@@ -302,35 +302,36 @@ class RandomCrawler:
                 comment_id = c.get("comment_id") or c.get("id") or 0
                 if not comment_id:
                     continue  # 没有 comment_id 的跳过
-                # 查已存在
-                existing = session.execute(
-                    select(Comment).where(
-                        Comment.song_id == song_id,
-                        Comment.comment_id == comment_id,
-                    )
-                ).scalar_one_or_none()
-                if existing:
-                    # 更新
-                    existing.content = c.get("content", existing.content)
-                    existing.user_nickname = c.get("user", c.get("user_nickname", existing.user_nickname))
-                    existing.liked_count = c.get("liked_count", c.get("likedCount", existing.liked_count))
-                    existing.comment_time = c.get("comment_time", c.get("time", existing.comment_time))
-                    existing.is_hot = 1 if c.get("is_hot") else existing.is_hot
-                    existing.crawled_at = now_cst()
-                    # ai_* 保留, 不动
-                    updated += 1
-                else:
-                    # 新增
-                    comment = Comment(
-                        comment_id=comment_id,
-                        song_id=song_id,
-                        user_nickname=c.get("user", c.get("user_nickname", "")),
-                        content=c.get("content", ""),
-                        liked_count=c.get("liked_count", c.get("likedCount", 0)),
-                        comment_time=c.get("comment_time", c.get("time", 0)),
-                        is_hot=1 if (c.get("is_hot") or is_hot) else 0,
-                    )
-                    session.add(comment)
+                # P1-5 修复: 用 INSERT ... ON CONFLICT DO UPDATE 代替先 SELECT 再 INSERT
+                # 避免 scheduler 线程与 API 线程并发写同一首歌时丢数据
+                # 或重复行 (老库可能补迁移后才唯一, 测了 uq_comments_song_comment 已存在)
+                from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+                comment_dict = {
+                    "comment_id": comment_id,
+                    "song_id": song_id,
+                    "user_nickname": c.get("user", c.get("user_nickname", "")),
+                    "content": c.get("content", ""),
+                    "liked_count": c.get("liked_count", c.get("likedCount", 0)),
+                    "comment_time": c.get("comment_time", c.get("time", 0)),
+                    "is_hot": 1 if (c.get("is_hot") or is_hot) else 0,
+                    "crawled_at": now_cst(),
+                }
+                stmt = sqlite_insert(Comment).values(comment_dict)
+                # ON CONFLICT (song_id, comment_id) DO UPDATE SET content, user_nickname, liked_count, ...
+                # ai_* 字段不覆盖 (保留上次评分)
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["song_id", "comment_id"],
+                    set_={
+                        "content": stmt.excluded.content,
+                        "user_nickname": stmt.excluded.user_nickname,
+                        "liked_count": stmt.excluded.liked_count,
+                        "comment_time": stmt.excluded.comment_time,
+                        "is_hot": stmt.excluded.is_hot,
+                        "crawled_at": stmt.excluded.crawled_at,
+                    },
+                )
+                result = session.execute(stmt)
+                if result.rowcount > 0:
                     inserted += 1
             session.commit()
             logger.info(f"💾 入库评论: song={song_id}, 新增 {inserted} + 更新 {updated} = {inserted + updated} 条")
@@ -628,18 +629,24 @@ class RandomCrawler:
         5 首重爬(7天前) + 3 首新歌(榜单/关键词) + 2 首评论增量 = 10 首
         """
         # 2026-09-06 P2 #7: 加单实例锁 fcntl.flock, 防止多入口 (scheduler/cron/manual) 并发跑
-        # lock_path = /root/netease163/data/.spider.lock
-        import fcntl
+        # P1-8 修复: fcntl 在 Windows 不可用, try-import 降级为无锁
         from pathlib import Path
+        try:
+            import fcntl
+            HAS_FCNTL = True
+        except ImportError:
+            HAS_FCNTL = False
+            logger.warning("⚠️  fcntl 不可用 (Windows 平台), 跳过文件锁")
         lock_path = Path(__file__).parent.parent.parent / "data" / ".spider.lock"
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         lock_fp = open(lock_path, "w")
         try:
-            try:
-                fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                logger.warning("⚠️  另一进程已在跑 run_one_round, 本次跳过 (防止重复爬取)")
-                return {"songs_new": 0, "songs_recrawl": 0, "songs_dup": 0, "comments_new": 0, "comment_inc": 0, "skipped": 1}
+            if HAS_FCNTL:
+                try:
+                    fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    logger.warning("⚠️  另一进程已在跑 run_one_round, 本次跳过 (防止重复爬取)")
+                    return {"songs_new": 0, "songs_recrawl": 0, "songs_dup": 0, "comments_new": 0, "comment_inc": 0, "skipped": 1}
             return self._run_one_round_inner()
         finally:
             try:
