@@ -58,20 +58,35 @@ def job_daily_summary():
 
 
 def get_scheduler() -> BackgroundScheduler:
-    """单例 scheduler"""
+    """单例 scheduler - 2026-09-07 v2: 拆 7 段 cron (T5)
+    之前 1 个 */20 跑全天, 频率固定不可调
+    现在 7 段按小时映射不同频率 + 不同 max_instances=1 防重叠
+    """
     global _scheduler_instance
     if _scheduler_instance is None:
         _scheduler_instance = BackgroundScheduler(timezone="Asia/Shanghai")
-        # 每 20 分钟跑一轮 (每天 72 轮)
-        _scheduler_instance.add_job(
-            job_run_round,
-            CronTrigger.from_crontab("*/20 * * * *"),
-            id="run_round",
-            name="随机爬取 - 每 20 分钟",
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-        )
+
+        # 7 段 cron (T5): 按小时不同频率, 独立 ID 防重复
+        cron_segments = [
+            # (cron_expr, id, name)
+            ("*/30 0-6 * * *",    "run_deep_night",  "随机爬取 - 凌晨 (0-6点) 每30分钟"),
+            ("*/20 7-9 * * *",     "run_pre_market",  "随机爬取 - 早盘前 (7-9点) 每20分钟"),
+            ("*/15 10-11 * * *",   "run_morning_peak", "随机爬取 - 早盘 (10-11点) 每15分钟"),
+            ("*/20 12-12 * * *",   "run_noon",        "随机爬取 - 午休 (12点) 每20分钟"),
+            ("*/20 13-14 * * *",   "run_afternoon",   "随机爬取 - 午后 (13-14点) 每20分钟"),
+            ("*/25 15-23 * * *",   "run_evening",     "随机爬取 - 晚+夜 (15-23点) 每25分钟"),
+        ]
+        for cron_expr, job_id, name in cron_segments:
+            _scheduler_instance.add_job(
+                job_run_round,
+                CronTrigger.from_crontab(cron_expr),
+                id=job_id,
+                name=name,
+                replace_existing=True,
+                max_instances=1,  # 1 实例防重叠
+                coalesce=True,     # 堆叠合并
+            )
+
         # 每日 02:00 关键词扩展
         _scheduler_instance.add_job(
             job_extend_keywords,
@@ -88,7 +103,7 @@ def get_scheduler() -> BackgroundScheduler:
             name="日报 - 每日 23:50",
             replace_existing=True,
         )
-        logger.info("📅 调度器已配置: 3 个 cron 任务")
+        logger.info(f"📅 调度器已配置: {len(cron_segments)} 个 cron 段 + 2 个日报任务")
     return _scheduler_instance
 
 

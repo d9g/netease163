@@ -32,8 +32,34 @@ from ..api.cst_time import now_cst
 logger = get_logger("netease163.random")
 
 # ==================== 配置 ====================
-MIN_INTERVAL = 8  # 最小间隔秒
-MAX_INTERVAL = 25  # 最大间隔秒
+
+# 2026-09-07 v2 升级: 自适应节奏 7 段 profile (跟时间做朋友, 更像人)
+# 设计原则:
+#   凌晨用户少 + 网易云 API 限流最严 → 间隔大 / 每轮少
+#   早盘竞价 + 开盘 → 间隔小 / 每轮多 / 优先级提高
+#   午休 + 午后 + 晚间 → 中等节奏
+# 7 段 profile 按小时 (0-23) 映射到不同的 MIN/MAX 间隔 + 每轮入歌数
+# 风控降速 (T4) 会动态调整当前 profile 的 MIN/MAX, 但 profile 表本身不变
+TIME_PROFILES = {
+    # (start_hour, end_hour_exclusive): {min_interval, max_interval, round_songs, name}
+    (0, 7):   {"min": 15, "max": 35, "round": 2, "name": "deep_night"},
+    (7, 10):  {"min": 12, "max": 28, "round": 3, "name": "pre_market"},
+    (10, 12): {"min": 5,  "max": 15, "round": 4, "name": "morning_peak"},
+    (12, 13): {"min": 10, "max": 22, "round": 3, "name": "noon"},
+    (13, 15): {"min": 8,  "max": 18, "round": 3, "name": "afternoon"},
+    (15, 24): {"min": 12, "max": 25, "round": 3, "name": "evening_night"},
+}
+
+# 间隔下限 (风控降速不会低于这个) (T4)
+MIN_INTERVAL_FLOOR = 3
+MAX_INTERVAL_FLOOR = 8
+
+# 预留并发参数 (T1)
+# 默认 1 = 串行, 保持安全
+# 改 2 = 轻度并发, 风险中等, 风控降速需加严
+# 改 3+ = 高度并发, 必须配 Redis/DB 锁防重复 (目前 fcntl.flock 不够)
+# MAX_WORKERS=1 时 _fetch_workers_concurrent 函数被跳过, 改 >=2 才会调用
+MAX_WORKERS = 1
 
 # 每天目标
 DAILY_TARGET = 100  # 需求 100+ 首/天
@@ -43,7 +69,7 @@ DAILY_TARGET = 100  # 需求 100+ 首/天
 # run_one_round 实际用 _fetch_via_toplist(top_n=2) + _fetch_via_keyword(top_n=1)
 # 这些常量定义但从未引用, 保留造成"配置与行为不一致"误解
 
-# 跟时间做朋友分配 () 
+# 跟时间做朋友分配 ()
 # 每天 100 首: 50% 重爬(7天前) + 30% 新歌 + 20% 评论增量
 # 每轮 10 首: 5 重爬 + 3 新歌 + 2 评论
 RE_WEIGHT = 0.50  # 50% 重新更新
@@ -52,6 +78,7 @@ COMMENT_WEIGHT = 0.20  # 20% 评论增量
 ROUND_RE_SONGS = 5  # 每轮重爬 5 首
 ROUND_NEW_SONGS = 3  # 每轮新歌 3 首
 ROUND_COMMENT_SONGS = 2  # 每轮评论增量 2 首
+ROUND_LLM_PRIORITY = 2  # 2026-09-07: LLM 优先级, 每轮优先 2 首 (T2)
 ROUND_FULL_CRAWL_SONGS = 3  # 每轮全量爬 3 首未完成的歌
 STALE_DAYS = 7  # 7 天前的歌优先重爬
 
@@ -63,10 +90,28 @@ INC_MARK = "inc"  # 表示字段 +1
 DAILY_ROUNDS = 72
 
 
+def _get_current_profile():
+    """按当前小时返回 TIME_PROFILES 配置 (T1)
+    返回: {min, max, round, name}
+    """
+    from .spider import now_cst
+    hour = now_cst().hour
+    for (start, end), profile in TIME_PROFILES.items():
+        if start <= hour < end:
+            return profile
+    # fallback (不可能走这里, TIME_PROFILES 覆盖 0-24)
+    return {"min": 12, "max": 25, "round": 3, "name": "fallback"}
+
+
 def random_sleep():
-    """反爬: 随机间隔 [8, 25] 秒"""
-    delay = random.uniform(MIN_INTERVAL, MAX_INTERVAL)
-    logger.debug(f"⏳ 等待 {delay:.1f}s (反爬随机)")
+    """反爬: 随机间隔, 按当前 profile 动态选
+    2026-09-07 v2: 不再读模块级 MIN_INTERVAL, 改读 TIME_PROFILES
+    注: random_sleep 是模块级函数, 不访问实例, 所以风控调整后的 profile 不会反映
+    实际生效在 _run_one_round_inner 里调用 self._sleep_with_health() (T4)
+    """
+    p = _get_current_profile()
+    delay = random.uniform(p["min"], p["max"])
+    logger.debug(f"⏳ 等待 {delay:.1f}s (profile={p['name']} [{p['min']}-{p['max']}s])")
     time.sleep(delay)
 
 
@@ -84,6 +129,11 @@ class RandomCrawler:
         self.today_count = 0
         self.today_date = now_cst().date()
 
+        # 2026-09-07 v2: 风控降速 计数器 (T4)
+        self._failure_count = 0  # 连续 429/timeout 计数
+        self._success_count = 0  # 连续 200 OK 计数
+        self._last_profile_name = None  # profile 切换检测
+
     def _reset_if_new_day(self):
         """跨天重置计数"""
         today = now_cst().date()
@@ -91,6 +141,100 @@ class RandomCrawler:
             logger.info(f"📅 跨天重置计数 (昨天 {self.today_count} 首)")
             self.today_count = 0
             self.today_date = today
+            # 跨天重置风控计数器 (新一天从干净状态起)
+            self._failure_count = 0
+            self._success_count = 0
+
+    def _get_current_profile(self) -> Dict:
+        """返回当前小时的 profile dict (T1)
+        包含调整后的 min/max (风控降速会乘系数)
+        """
+        hour = now_cst().hour
+        for (start, end), profile in TIME_PROFILES.items():
+            if start <= hour < end:
+                # 检测 profile 切换, 重置风控计数器
+                if self._last_profile_name != profile["name"]:
+                    logger.info(f"🕐 切换到 profile: {profile['name']} (时段 {start}-{end}h, 间隔 {profile['min']}-{profile['max']}s)")
+                    self._last_profile_name = profile["name"]
+                    self._failure_count = 0
+                    self._success_count = 0
+                return profile
+        return {"min": 12, "max": 25, "round": 3, "name": "fallback"}
+
+    def _record_failure(self, err_type: str = "unknown"):
+        """记录一次失败 (429/timeout) (T4)
+        连续 3 次失败 → MIN/MAX 各乘 1.5 (但不低于 floor)
+        """
+        self._failure_count += 1
+        self._success_count = 0
+        if self._failure_count >= 3:
+            # 调整当前 profile (不是 TIME_PROFILES 原值, 只影响本轮 + 后续轮次)
+            old_profile = self._get_current_profile()
+            if old_profile["min"] < MIN_INTERVAL_FLOOR * 2:
+                logger.warning(f"⚠️  风控降速: 连续 {self._failure_count} 次失败 ({err_type}), profile {old_profile['name']} 间隔从 [{old_profile['min']}-{old_profile['max']}s] 放大")
+                # 注: TIME_PROFILES 是只读常量, 调整值存在本实例的 _adjusted_profiles
+                if not hasattr(self, '_adjusted_profiles'):
+                    self._adjusted_profiles = {}
+                key = old_profile["name"]
+                adj = self._adjusted_profiles.get(key, {"min": old_profile["min"], "max": old_profile["max"]})
+                adj["min"] = min(int(adj["min"] * 1.5), MIN_INTERVAL_FLOOR * 4)  # 上限 12s
+                adj["max"] = min(int(adj["max"] * 1.3), MAX_INTERVAL_FLOOR * 4)  # 上限 32s
+                self._adjusted_profiles[key] = adj
+                self._failure_count = 0  # 重置, 避免连续累加
+
+    def _record_success(self):
+        """记录一次成功 (200 OK) (T4)
+        连续 20 次成功 → 恢复间隔 × 0.95 (但不低于 TIME_PROFILES 原值)
+        """
+        self._success_count += 1
+        if self._success_count >= 20:
+            if hasattr(self, '_adjusted_profiles') and self._adjusted_profiles:
+                old_profile = self._get_current_profile()
+                key = old_profile["name"]
+                if key in self._adjusted_profiles:
+                    adj = self._adjusted_profiles[key]
+                    # 获取原 profile 值 (不能低于)
+                    for (start, end), prof in TIME_PROFILES.items():
+                        if prof["name"] == key:
+                            new_min = max(int(adj["min"] * 0.95), prof["min"])
+                            new_max = max(int(adj["max"] * 0.95), prof["max"])
+                            if new_min != adj["min"] or new_max != adj["max"]:
+                                adj["min"] = new_min
+                                adj["max"] = new_max
+                                self._adjusted_profiles[key] = adj
+                                logger.info(f"✅ 风控恢复: profile {key} 间隔 [{adj['min']}-{adj['max']}s]")
+                            break
+            self._success_count = 0
+
+    def _fetch_workers_concurrent(self, items, fetch_fn, max_workers: int = None):
+        """并发爬取骨架 (T1 预留, 默认不调用)
+        用法: results = self._fetch_workers_concurrent(song_ids, lambda sid: self._fetch_comments_for_song(sid), max_workers=2)
+        当前 MAX_WORKERS=1, 走串行
+        改 MAX_WORKERS=2 时启用, 需注意:
+          1. fcntl.flock 已加 (run_one_round 入口), 并发安全
+          2. Comment UNIQUE 约束 (song_id, comment_id) 防重
+          3. 风控降速 (T4) 需乘 2 倍谨慎系数
+          4. DB 连接池需 >= max_workers (现 get_session() 每次新建, 问题不大但需监控)
+        """
+        workers = max_workers or MAX_WORKERS
+        if workers <= 1:
+            # 串行 fallback
+            return [fetch_fn(item) for item in items]
+        # 并发骨架 (未实现, 留给将来)
+        from concurrent.futures import ThreadPoolExecutor
+        logger.warning(f"⚠️  并发爬取未完整实现 (workers={workers}), 走串行")
+        return [fetch_fn(item) for item in items]
+
+    def _sleep_with_health(self):
+        """实例版 random_sleep (T4)
+        考虑风控降速后的 _adjusted_profiles
+        与模块级 random_sleep() 区别: 读取 self._adjusted_profiles
+        """
+        p = self._get_current_profile()
+        adj = getattr(self, '_adjusted_profiles', {}).get(p["name"], p)
+        delay = random.uniform(adj["min"], adj["max"])
+        logger.debug(f"⏳ 等待 {delay:.1f}s (profile={p['name']} [{adj['min']}-{adj['max']}s], health=fail={self._failure_count}/succ={self._success_count})")
+        time.sleep(delay)
 
     def _is_song_exists(self, song_id: int) -> bool:
         """检查 song 是否已入库"""
@@ -135,28 +279,72 @@ class RandomCrawler:
             session.close()
 
     def _get_comment_targets(self, limit: int) -> List[Dict]:
-        """跟时间做朋友: 选热门但 3 天没爬评论的歌"""
+        """跟时间做朋友: 选热门但 3 天没爬评论的歌
+        T3 修复: 之前 order_by(desc(Song.id)) 用 song.id (网易云源 ID) 排序, 跟入库时间无关
+        改为 order_by(asc(SongCrawlStatus.last_comment_crawled_at)), 优先重爬 3 天没动的歌
+        """
         from datetime import datetime, timedelta
         from ..storage.models import SongCrawlStatus
-        from sqlalchemy import and_, desc
+        from sqlalchemy import and_, asc
         cutoff = (now_cst() - timedelta(days=3)).isoformat()
         session = get_session()
         try:
-            # 3 天没爬评论 + 有评论的歌
+            # 3 天没爬评论的歌, 按 last_comment_crawled_at ASC (最久的优先)
             stmt = (
-                select(Song.id, Song.name, Song.comment_total)
+                select(Song.id, Song.name, Song.comment_total, SongCrawlStatus.last_comment_crawled_at)
                 .outerjoin(
                     SongCrawlStatus,
                     and_(SongCrawlStatus.song_id == Song.id, SongCrawlStatus.last_comment_crawled_at >= cutoff)
                 )
                 .where(SongCrawlStatus.song_id.is_(None))
-                .order_by(desc(Song.id))
+                .order_by(asc(SongCrawlStatus.last_comment_crawled_at))
                 .limit(limit)
             )
             rows = session.execute(stmt).all()
-            return [{"song_id": r[0], "name": r[1], "comment_count": r[2] or 0} for r in rows]
+            return [{"song_id": r[0], "name": r[1], "comment_count": r[2] or 0, "last_comment_crawled_at": r[3]} for r in rows]
         except Exception as e:
             logger.warning(f"⚠️  查 comment 目标失败: {e}")
+            return []
+        finally:
+            session.close()
+
+    def _get_llm_priority_targets(self, limit: int) -> List[Dict]:
+        """T2: LLM 优先级重爬
+        选满足门槛的歌 (ai_score >= 4 AND liked_count >= 50) 优先重爬评论
+        设计: 不入新歌, 仅为已有"高价值"评论的歌补新评论 + 重评
+        门槛来源: 9/7 设计
+        """
+        from ..storage.models import Comment
+        from sqlalchemy import and_, desc, func
+        session = get_session()
+        try:
+            # 选有"高价值"评论的歌, 按 max(ai_score) + sum(liked_count) 排
+            stmt = (
+                select(
+                    Song.id, Song.name, Song.comment_total,
+                    func.max(Comment.ai_score).label("max_ai"),
+                    func.max(Comment.liked_count).label("max_liked"),
+                    func.count(Comment.id).label("high_value_count"),
+                )
+                .join(Comment, Comment.song_id == Song.id)
+                .where(and_(Comment.ai_score >= 4, Comment.liked_count >= 50))
+                .group_by(Song.id)
+                .order_by(desc("max_ai"), desc("max_liked"))
+                .limit(limit)
+            )
+            rows = session.execute(stmt).all()
+            results = [
+                {
+                    "song_id": r[0], "name": r[1], "comment_total": r[2] or 0,
+                    "max_ai_score": r[3], "max_liked": r[4], "high_value_count": r[5],
+                }
+                for r in rows
+            ]
+            if results:
+                logger.info(f"🎯 LLM 优先级: 选出 {len(results)} 首高价值歌 (ai>=4 AND liked>=50), 首首 max_ai={results[0]['max_ai_score']:.0f}/max_liked={results[0]['max_liked']}")
+            return results
+        except Exception as e:
+            logger.warning(f"⚠️  查 LLM 优先级目标失败: {e}")
             return []
         finally:
             session.close()
@@ -663,27 +851,60 @@ class RandomCrawler:
                 pass
 
     def _run_one_round_inner(self) -> Dict[str, int]:
-        """实际跑一轮逻辑 (加锁后调用)"""
+        """实际跑一轮逻辑 (加锁后调用)
+        2026-09-07 v2: 7 段 profile + LLM 优先级 + 风控降速 (T1/T2/T4)
+        顺序: LLM 优先级 → 重爬 → 新歌 → 评论增量 → 全量补齐
+        """
         self._reset_if_new_day()
         round_start = time.time()
-        logger.info(f"🏃 跑一轮 (今天累计 {self.today_count}/{DAILY_TARGET}) 分配: 重爬 {ROUND_RE_SONGS} + 新歌 {ROUND_NEW_SONGS} + 评论增量 {ROUND_COMMENT_SONGS} + 全量补齐 {ROUND_FULL_CRAWL_SONGS}")
+        profile = self._get_current_profile()
+        logger.info(f"🏃 跑一轮 (profile={profile['name']}, 间隔 {profile['min']}-{profile['max']}s) 今天累计 {self.today_count}/{DAILY_TARGET}")
 
-        stats = {"songs_new": 0, "songs_recrawl": 0, "songs_dup": 0, "comments_new": 0, "comment_inc": 0}
+        stats = {"songs_new": 0, "songs_recrawl": 0, "songs_dup": 0, "comments_new": 0, "comment_inc": 0, "llm_priority": 0}
+
+        # 0. T2: LLM 优先级重爬 (2 首, 最高优先级)
+        llm_targets = self._get_llm_priority_targets(limit=ROUND_LLM_PRIORITY)
+        for t in llm_targets:
+            song_id = t["song_id"]
+            logger.info(f"🎯 LLM 优先级重爬: song={song_id} ({t['name']}) max_ai={t['max_ai_score']:.0f}")
+            comments_saved = self._fetch_comments_for_song(song_id, full_crawl=False)
+            stats["comment_inc"] += comments_saved
+            stats["comments_new"] += comments_saved
+            stats["llm_priority"] += 1
+            self._mark_song_crawled(song_id, comment_crawled=True)
+            self._record_success()  # 成功
+            self._sleep_with_health()
 
         # 1. 重爬 5 首 (7 天前的歌, 跟时间做朋友)
         priority_targets = self._get_priority_targets(limit=ROUND_RE_SONGS)
         for t in priority_targets:
             song_id = t["song_id"]
-            comments_saved = self._fetch_comments_for_song(song_id)
+            try:
+                comments_saved = self._fetch_comments_for_song(song_id)
+                self._record_success()
+            except Exception as e:
+                self._record_failure("priority")
+                logger.warning(f"⚠️  重爬 {song_id} 失败: {e}")
+                continue
             stats["comments_new"] += comments_saved
             self._mark_song_crawled(song_id, comment_crawled=True)
             stats["songs_recrawl"] += 1
-            random_sleep()
+            self._sleep_with_health()
 
         # 2. 新歌 3 首 (榜单/关键词)
         # 从 6 榜单 + 4 关键词里取 3 首 (50% 榜单 + 50% 关键词)
-        tl_songs = self._fetch_via_toplist(top_n=2)
-        kw_songs = self._fetch_via_keyword(top_n=1)
+        try:
+            tl_songs = self._fetch_via_toplist(top_n=2)
+        except Exception as e:
+            self._record_failure("toplist")
+            tl_songs = []
+            logger.warning(f"⚠️  榜单拉取失败: {e}")
+        try:
+            kw_songs = self._fetch_via_keyword(top_n=1)
+        except Exception as e:
+            self._record_failure("keyword")
+            kw_songs = []
+            logger.warning(f"⚠️  关键词拉取失败: {e}")
         new_songs = tl_songs + kw_songs
         for s in new_songs:
             song_id = s.get("id")
@@ -695,19 +916,31 @@ class RandomCrawler:
             else:
                 stats["songs_dup"] += 1
             self._mark_song_crawled(song_id, comment_crawled=False)
-            comments_saved = self._fetch_comments_for_song(song_id)
+            try:
+                comments_saved = self._fetch_comments_for_song(song_id)
+                self._record_success()
+            except Exception as e:
+                self._record_failure("new_song_comment")
+                logger.warning(f"⚠️  新歌 {song_id} 评论拉取失败: {e}")
+                comments_saved = 0
             stats["comments_new"] += comments_saved
-            random_sleep()
+            self._sleep_with_health()
 
-        # 3. 评论增量 2 首 (3 天没爬评论的热门歌)
+        # 3. 评论增量 2 首 (3 天没爬评论的热门歌, T3 排序已修)
         comment_targets = self._get_comment_targets(limit=ROUND_COMMENT_SONGS)
         for t in comment_targets:
             song_id = t["song_id"]
-            comments_saved = self._fetch_comments_for_song(song_id)
+            try:
+                comments_saved = self._fetch_comments_for_song(song_id)
+                self._record_success()
+            except Exception as e:
+                self._record_failure("comment_inc")
+                logger.warning(f"⚠️  评论增量 {song_id} 失败: {e}")
+                continue
             stats["comment_inc"] += comments_saved
             stats["comments_new"] += comments_saved
             self._mark_song_crawled(song_id, comment_crawled=True)
-            random_sleep()
+            self._sleep_with_health()
 
         # 4. 全量爬 3 首未完成评论的歌
         #    断点续传: 从 last_comment_offset 爬到 comment_total
@@ -716,14 +949,20 @@ class RandomCrawler:
         for t in uncompleted:
             song_id = t["song_id"]
             logger.info(f"🎯 全量爬 song={song_id} (offset={t.get('last_comment_offset')}/{t.get('comment_total')}, {(t.get('last_comment_offset') or 0) * 100 // max(t.get('comment_total') or 1, 1)}%)")
-            comments_saved = self._fetch_comments_for_song(song_id, full_crawl=True)
+            try:
+                comments_saved = self._fetch_comments_for_song(song_id, full_crawl=True)
+                self._record_success()
+            except Exception as e:
+                self._record_failure("full_crawl")
+                logger.warning(f"⚠️  全量爬 {song_id} 失败: {e}")
+                continue
             stats["comment_inc"] += comments_saved
             stats["comments_new"] += comments_saved
             self._mark_song_crawled(song_id, comment_crawled=True)
-            random_sleep()
+            self._sleep_with_health()
 
         duration = int((time.time() - round_start))
-        logger.info(f"✅ 一轮完成: 重爬 {stats['songs_recrawl']} + 新歌 {stats['songs_new']} + 重复 {stats['songs_dup']} + 评论 {stats['comments_new']} (增量 {stats['comment_inc']}) 耗时 {duration}s")
+        logger.info(f"✅ 一轮完成: LLM优先 {stats['llm_priority']} + 重爬 {stats['songs_recrawl']} + 新歌 {stats['songs_new']} + 重复 {stats['songs_dup']} + 评论 {stats['comments_new']} (增量 {stats['comment_inc']}) 耗时 {duration}s")
         return stats
 
     def run_until_target(self, target: int = DAILY_TARGET, max_minutes: int = 240):
