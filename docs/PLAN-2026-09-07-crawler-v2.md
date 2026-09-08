@@ -5,12 +5,12 @@
 
 ## 子任务清单
 
-- [ ] **T1**: 自适应节奏 (7 段 profile + 7 个 cron + 预留并发)
-- [ ] **T2**: LLM 优先级 (输入侧 _get_llm_priority_targets)
-- [ ] **T3**: P2 遗留 bug 修复 (_get_comment_targets 排序)
-- [ ] **T4**: 调度锁 (fcntl.flock) + 风控降速 (_adjust_interval_by_health)
-- [ ] **T5**: cron 拆 7 段 (跟 T1 一起)
-- [ ] **T6**: 文档 + MEMORY 同步 + 24h 验证
+- [x] **T1**: 自适应节奏 (7 段 profile + 7 个 cron + 预留并发)
+- [x] **T2**: LLM 优先级 (输入侧 _get_llm_priority_targets)
+- [x] **T3**: P2 遗留 bug 修复 (_get_comment_targets 排序)
+- [x] **T4**: 调度锁 (fcntl.flock) + 风控降速 (_adjust_interval_by_health)
+- [x] **T5**: cron 拆 7 段 (跟 T1 一起)
+- [x] **T6**: MEMORY 同步 + 24h 验证
 
 ## 关键设计
 
